@@ -1,36 +1,23 @@
 # Render Blueprint — Observatorio Virtual de Astronomía
-# Despliega DOS servicios desde este mismo repo de GitHub:
-#   1) observatorio-servidor : Web Service Node + ws (proceso persistente, wss://)
-#   2) observatorio-cliente   : Static Site que sirve index.html (CDN)
+# UN SOLO servicio: el servidor Node + ws sirve TAMBIÉN el index.html.
+# Así basta una única URL (sin ?ws= manual): el cliente, al cargarse por
+# https, abre el WebSocket contra su mismo origen automáticamente.
 #
 # Cómo usarlo:
 #   Render → New → Blueprint → conectar este repo → Apply.
-#   Render crea ambos servicios automáticamente con esta configuración.
+#   (O bien un único Web Service manual con la config de abajo.)
 #
-# Link de acceso final (ver §7c del plan):
-#   https://observatorio-cliente.onrender.com/?ws=wss://observatorio-servidor.onrender.com
-#   (ojo: wss://, no ws://, porque el servidor se sirve sobre HTTPS)
+# Acceso final: solo comparte  https://<tu-servicio>.onrender.com
+#   — sirve el cliente Y el multiusuario en la misma URL.
+#   El panel "Invitar" genera el QR de esa URL automáticamente.
 
 services:
-  # ----------------------------------------------------------------
-  # SERVIDOR — Node + ws, autoritativo. Único puerto HTTP (Render
-  # inyecta PORT); el WebSocket viaja sobre ese mismo servidor.
-  # ----------------------------------------------------------------
   - type: web
-    name: observatorio-servidor
+    name: observatorio-virtual
     runtime: node
     plan: free
-    rootDir: server
+    rootDir: server          # cwd para build/start; el repo entero se clona,
+                             # así que server.js lee ../index.html sin problema.
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /
-
-  # ----------------------------------------------------------------
-  # CLIENTE — index.html estático servido por CDN. Sin build.
-  # ----------------------------------------------------------------
-  - type: web
-    name: observatorio-cliente
-    runtime: static
-    rootDir: .
-    buildCommand: ""
-    staticPublishPath: .

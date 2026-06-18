@@ -18,6 +18,8 @@
    ================================================================ */
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { WebSocketServer, WebSocket } = require('ws');
 
 /* ----------------------------------------------------------------
@@ -86,7 +88,29 @@ function aNumero(v, porDefecto) {
    El WebSocket viaja sobre ESTE mismo servidor/puerto (requisito de
    los tiers gratuitos, que exponen un único puerto HTTP).
    ---------------------------------------------------------------- */
+// Carga el cliente (index.html, en la raíz del repo: un nivel por encima
+// de /server) UNA vez al arrancar. El MISMO servicio sirve el cliente y el
+// WebSocket → una sola URL, sin tener que escribir ?ws=wss://… a mano.
+const RUTA_CLIENTE = path.join(__dirname, '..', 'index.html');
+let htmlCliente = null;
+try {
+  htmlCliente = fs.readFileSync(RUTA_CLIENTE);
+  console.log('[http] index.html cargado (' + htmlCliente.length + ' bytes).');
+} catch (e) {
+  console.warn('[http] No se halló index.html en ' + RUTA_CLIENTE +
+               '; se servirá solo el texto de estado. (' + e.message + ')');
+}
+
 const servidorHttp = http.createServer((req, res) => {
+  const ruta = (req.url || '/').split('?')[0];
+  // Sirve el cliente en "/" e "/index.html". El cliente, al cargarse por
+  // http(s), abre el WebSocket contra ESTE mismo origen automáticamente.
+  if (htmlCliente && (ruta === '/' || ruta === '/index.html')) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(htmlCliente);
+    return;
+  }
+  // Cualquier otra ruta (incluido el health check del proveedor): 200 OK.
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end('Observatorio Virtual — servidor WebSocket activo.');
 });
@@ -247,6 +271,6 @@ servidorHttp.listen(PUERTO, () => {
   console.log('========================================================');
   console.log(' Observatorio Virtual — servidor escuchando');
   console.log(' HTTP/WebSocket en el puerto ' + PUERTO);
-  console.log(' Cliente:  index.html?ws=ws://localhost:' + PUERTO);
+  console.log(' Cliente:  http://localhost:' + PUERTO + '/  (sirve index.html + WS)');
   console.log('========================================================');
 });

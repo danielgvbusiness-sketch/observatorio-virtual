@@ -1074,11 +1074,33 @@
   }
 
   /* ----------------------------------------------------------------
-     BANDERA DE MODO (Paso 10/12)
-     MODO_RED = hay ?ws= en la URL → la red alimenta el bus (Fase 2) y
-     el BotManager queda desactivado. Sin ?ws= → modo local con bots.
+     RESOLUCIÓN DE LA URL DEL WEBSOCKET
+     Orden de prioridad:
+       1) ?ws=… explícito en la URL  → se respeta tal cual (override).
+       2) Sin ?ws= pero la página se sirve por http(s) desde un host real
+          → el servidor que sirve este index.html es TAMBIÉN el servidor
+            WebSocket (mismo servicio en Render). Se conecta al MISMO
+            origen: no hay que escribir ?ws=wss://… a mano.
+       3) file:// o sin host (abierto como archivo local) → null → modo
+          local sin servidor (no hay multiusuario).
      ---------------------------------------------------------------- */
-  var MODO_RED = new URLSearchParams(window.location.search).has('ws');
+  function resolverUrlWs() {
+    var explicita = new URLSearchParams(window.location.search).get('ws');
+    if (explicita) return explicita;
+    var proto = window.location.protocol;
+    if ((proto === 'https:' || proto === 'http:') && window.location.host) {
+      var wsProto = (proto === 'https:') ? 'wss://' : 'ws://';
+      return wsProto + window.location.host;
+    }
+    return null;
+  }
+
+  /* ----------------------------------------------------------------
+     BANDERA DE MODO (Paso 10/12)
+     MODO_RED = hay un WebSocket que usar (mismo origen o ?ws=) → la red
+     alimenta el bus (Fase 2). Sin servidor (file://) → modo local.
+     ---------------------------------------------------------------- */
+  var MODO_RED = !!resolverUrlWs();
 
   // Bots eliminados: nunca aparecen (ni en modo local). Cambiar a true
   // si alguna vez se quiere recuperar la simulación de la Fase 1.
@@ -2334,9 +2356,9 @@
     _huboConexion: false,    // ¿llegó a abrir alguna vez? (para mensajes)
 
     iniciar: function () {
-      var url = new URLSearchParams(window.location.search).get('ws');
+      var url = resolverUrlWs();
       if (!url) {
-        console.log('[red] Sin ?ws=: modo local (sin servidor, no hay multiusuario).');
+        console.log('[red] Sin servidor (file://): modo local, no hay multiusuario.');
         return;
       }
 

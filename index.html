@@ -1,0 +1,2669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Observatorio Virtual de Astronomía</title>
+
+  <!-- Tipografía Inter desde Google Fonts (fallback: system-ui) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ============================================================
+       VARIABLES DE DISEÑO
+       Paleta navy/cyan + tokens de glassmorphism reutilizables.
+       ============================================================ */
+    :root {
+      --navy-900: #0a0e1a;   /* fondo principal */
+      --navy-800: #0d1424;   /* fondo de paneles */
+      --navy-700: #111a2e;   /* fondo elevado */
+      --cyan:     #22d3ee;   /* color de acento */
+      --cyan-dim: #0e7490;   /* acento atenuado */
+      --texto:        #e6edf6;  /* texto principal */
+      --texto-tenue:  #8b9bb4;  /* texto secundario */
+      --borde:        rgba(34, 211, 238, 0.18);  /* borde de cristal */
+      --vidrio:       rgba(13, 20, 36, 0.55);     /* relleno de cristal */
+      --vidrio-fuerte: rgba(13, 20, 36, 0.78);
+      --sombra:       0 8px 32px rgba(0, 0, 0, 0.45);
+      --radio:        14px;
+      --radio-sm:     10px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--navy-900);
+      color: var(--texto);
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ============================================================
+       LIENZO 3D
+       El canvas de Three.js ocupa toda la ventana, detrás del HUD.
+       ============================================================ */
+    #lienzo3d {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      display: block;
+      /* Degradado navy de respaldo mientras Three.js arranca */
+      background: radial-gradient(ellipse at 50% 40%, #131d33 0%, var(--navy-900) 70%);
+    }
+
+    /* ============================================================
+       UTILIDAD: superficie de cristal (glassmorphism)
+       ============================================================ */
+    .vidrio {
+      background: var(--vidrio);
+      backdrop-filter: blur(14px) saturate(140%);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      border: 1px solid var(--borde);
+      border-radius: var(--radio);
+      box-shadow: var(--sombra);
+    }
+
+    /* ============================================================
+       CAPA HUD
+       Contenedor de todos los paneles superpuestos. No captura
+       clics por sí mismo; cada panel reactiva pointer-events.
+       ============================================================ */
+    #hud {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+    }
+    #hud > * { pointer-events: auto; }
+
+    /* ---------- Título + badge de modo (arriba-izquierda) ---------- */
+    #cabecera {
+      position: absolute;
+      top: 18px;
+      left: 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 12px 18px;
+    }
+    #cabecera .marca {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    #cabecera .titulo {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
+    #cabecera .subtitulo {
+      font-size: 11px;
+      font-weight: 400;
+      color: var(--texto-tenue);
+      letter-spacing: 0.4px;
+    }
+    #cabecera .logo {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, var(--cyan), var(--cyan-dim) 70%, transparent);
+      box-shadow: 0 0 16px rgba(34, 211, 238, 0.6);
+      flex-shrink: 0;
+    }
+    #badge-modo {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 11px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      background: rgba(34, 211, 238, 0.10);
+      border: 1px solid var(--borde);
+      border-radius: 999px;
+    }
+    #badge-modo .punto {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 8px var(--cyan);
+    }
+
+    /* ---------- Panel de participantes (izquierda) ---------- */
+    #panel-participantes {
+      position: absolute;
+      top: 92px;
+      left: 18px;
+      width: 230px;
+      padding: 14px 16px;
+    }
+    .panel-titulo {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--texto-tenue);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .panel-titulo .contador {
+      color: var(--cyan);
+      font-variant-numeric: tabular-nums;
+    }
+    #lista-participantes {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+    }
+    #lista-participantes li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 400;
+    }
+    #lista-participantes .punto-color {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      box-shadow: 0 0 8px currentColor;
+    }
+    .vacio {
+      font-size: 12px;
+      color: var(--texto-tenue);
+      font-style: italic;
+    }
+
+    /* ---------- Feed de actividad (abajo-izquierda) ---------- */
+    #panel-feed {
+      position: absolute;
+      bottom: 18px;
+      left: 18px;
+      width: 280px;
+      max-height: 200px;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    #lista-feed {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+    }
+    #lista-feed li {
+      font-size: 12.5px;
+      line-height: 1.35;
+      color: var(--texto);
+      padding-left: 12px;
+      position: relative;
+    }
+    #lista-feed li::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 7px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--cyan);
+    }
+    #lista-feed li .hora {
+      color: var(--texto-tenue);
+      font-variant-numeric: tabular-nums;
+      font-size: 11px;
+      margin-right: 4px;
+    }
+
+    /* ---------- Panel de info de planeta (derecha) ---------- */
+    #panel-planeta {
+      position: absolute;
+      top: 92px;
+      right: 18px;
+      width: 290px;
+      padding: 18px 20px;
+    }
+    #panel-planeta.oculto { display: none; }
+    #panel-planeta .nombre-planeta {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      margin-bottom: 4px;
+    }
+    #panel-planeta .etiqueta-planeta {
+      font-size: 11px;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 14px;
+    }
+    #panel-planeta .datos {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    #panel-planeta .dato {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      padding-bottom: 8px;
+    }
+    #panel-planeta .dato .clave { color: var(--texto-tenue); }
+    #panel-planeta .dato .valor { font-weight: 500; font-variant-numeric: tabular-nums; }
+    #panel-planeta .curiosidad {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--texto-tenue);
+      font-style: italic;
+      border-left: 2px solid var(--cyan);
+      padding-left: 12px;
+    }
+    #panel-planeta .placeholder {
+      font-size: 13px;
+      color: var(--texto-tenue);
+      line-height: 1.5;
+    }
+
+    /* ============================================================
+       MAPA TÉCNICO (función estrella) — oculto por defecto
+       ============================================================ */
+    #boton-mapa {
+      position: absolute;
+      bottom: 18px;
+      right: 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 11px 16px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--cyan);
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    #boton-mapa:hover { transform: translateY(-1px); background: rgba(34, 211, 238, 0.12); }
+    #boton-mapa .icono {
+      width: 16px; height: 16px;
+      display: inline-block;
+      border: 1.5px solid var(--cyan);
+      border-radius: 4px;
+      position: relative;
+    }
+    #boton-mapa .icono::after {
+      content: '';
+      position: absolute;
+      inset: 3px;
+      border-top: 1.5px solid var(--cyan);
+      border-bottom: 1.5px solid var(--cyan);
+    }
+
+    #mapa-tecnico {
+      position: absolute;
+      bottom: 64px;
+      right: 18px;
+      width: 380px;
+      max-width: calc(100vw - 36px);
+      padding: 18px 20px;
+      transform-origin: bottom right;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+    #mapa-tecnico.oculto {
+      opacity: 0;
+      transform: scale(0.96) translateY(8px);
+      pointer-events: none;
+    }
+    #mapa-tecnico .encabezado-mapa {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    #mapa-tecnico h2 {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    #mapa-tecnico .cerrar {
+      background: none;
+      border: none;
+      color: var(--texto-tenue);
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    #mapa-tecnico .cerrar:hover { color: var(--texto); }
+    #mapa-tecnico .nota-modo {
+      font-size: 11px;
+      line-height: 1.4;
+      color: var(--texto-tenue);
+      background: rgba(34, 211, 238, 0.07);
+      border: 1px solid var(--borde);
+      border-radius: var(--radio-sm);
+      padding: 8px 10px;
+      margin-bottom: 14px;
+    }
+    #filas-mapa {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    #filas-mapa .fila {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 4px 12px;
+      align-items: start;
+      padding: 9px 11px;
+      border-radius: var(--radio-sm);
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid transparent;
+      transition: background 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+    /* Estado resaltado cuando ocurre su evento (Paso 11) */
+    #filas-mapa .fila.activa {
+      background: rgba(34, 211, 238, 0.14);
+      border-color: var(--cyan);
+      box-shadow: 0 0 18px rgba(34, 211, 238, 0.25);
+    }
+    #filas-mapa .fila .en-pantalla {
+      font-size: 13px;
+      font-weight: 500;
+      grid-column: 1;
+    }
+    #filas-mapa .fila .concepto {
+      font-size: 11.5px;
+      color: var(--texto-tenue);
+      grid-column: 1;
+      line-height: 1.3;
+    }
+    #filas-mapa .fila .event-key {
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      align-self: center;
+      font-size: 10.5px;
+      font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+      color: var(--cyan);
+      background: rgba(34, 211, 238, 0.08);
+      border: 1px solid var(--borde);
+      border-radius: 6px;
+      padding: 3px 7px;
+      white-space: nowrap;
+    }
+
+    /* ============================================================
+       OVERLAY DE ENTRADA
+       Pantalla inicial: nombre + color + botón Entrar.
+       ============================================================ */
+    #overlay-entrada {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5, 8, 16, 0.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    #overlay-entrada.oculto { display: none; }
+    #tarjeta-entrada {
+      width: 380px;
+      max-width: calc(100vw - 40px);
+      padding: 34px 32px;
+      text-align: center;
+    }
+    #tarjeta-entrada .logo-grande {
+      width: 60px;
+      height: 60px;
+      margin: 0 auto 18px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 35% 30%, var(--cyan), var(--cyan-dim) 65%, transparent);
+      box-shadow: 0 0 30px rgba(34, 211, 238, 0.55);
+    }
+    #tarjeta-entrada h1 {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      margin-bottom: 6px;
+    }
+    #tarjeta-entrada .lema {
+      font-size: 13px;
+      color: var(--texto-tenue);
+      line-height: 1.5;
+      margin-bottom: 26px;
+    }
+    .campo { text-align: left; margin-bottom: 20px; }
+    .campo label {
+      display: block;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--texto-tenue);
+      margin-bottom: 9px;
+    }
+    #input-nombre {
+      width: 100%;
+      padding: 12px 14px;
+      font-family: inherit;
+      font-size: 15px;
+      color: var(--texto);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--borde);
+      border-radius: var(--radio-sm);
+      outline: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    #input-nombre::placeholder { color: var(--texto-tenue); }
+    #input-nombre:focus {
+      border-color: var(--cyan);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+    }
+    /* Selector de color: 6 swatches */
+    #swatches {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .swatch {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid transparent;
+      position: relative;
+      transition: transform 0.12s ease;
+    }
+    .swatch:hover { transform: scale(1.1); }
+    .swatch.activo {
+      border-color: #fff;
+      box-shadow: 0 0 0 2px var(--navy-900), 0 0 14px currentColor;
+    }
+    #boton-entrar {
+      width: 100%;
+      padding: 14px;
+      font-family: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--navy-900);
+      background: var(--cyan);
+      border: none;
+      border-radius: var(--radio-sm);
+      cursor: pointer;
+      transition: filter 0.15s ease, transform 0.1s ease;
+      box-shadow: 0 0 24px rgba(34, 211, 238, 0.35);
+    }
+    #boton-entrar:hover { filter: brightness(1.08); }
+    #boton-entrar:active { transform: scale(0.985); }
+    #boton-entrar:disabled {
+      background: var(--cyan-dim);
+      color: var(--texto-tenue);
+      cursor: not-allowed;
+      box-shadow: none;
+      filter: none;
+    }
+
+    /* ============================================================
+       ETIQUETAS DE NOMBRE (Paso 6)
+       Capa de divs HTML proyectados sobre la escena con
+       vector.project(camera). Va por debajo del HUD.
+       ============================================================ */
+    #capa-etiquetas {
+      position: fixed;
+      inset: 0;
+      z-index: 5;
+      pointer-events: none;
+      overflow: hidden;
+    }
+    .etiqueta-nombre {
+      position: absolute;
+      transform: translate(-50%, -100%);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      white-space: nowrap;
+      background: rgba(13, 20, 36, 0.72);
+      border: 1px solid var(--borde);
+      border-radius: 999px;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      box-shadow: var(--sombra);
+      will-change: transform, left, top;
+    }
+    .etiqueta-nombre .punto-color {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      box-shadow: 0 0 6px currentColor;
+      flex-shrink: 0;
+    }
+    .etiqueta-nombre.oculta { display: none; }
+
+    /* ============================================================
+       JOYSTICK VIRTUAL (Paso 7) — solo visible en táctil tras entrar.
+       ============================================================ */
+    #joystick {
+      position: fixed;
+      left: 24px;
+      bottom: 130px;
+      width: 124px;
+      height: 124px;
+      border-radius: 50%;
+      background: var(--vidrio);
+      border: 1px solid var(--borde);
+      box-shadow: var(--sombra);
+      z-index: 20;
+      display: none;            /* se activa en táctil al hacer spawn */
+      touch-action: none;
+    }
+    #joystick.visible { display: block; }
+    #joystick .perilla {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 54px;
+      height: 54px;
+      margin: -27px 0 0 -27px;
+      border-radius: 50%;
+      background: rgba(34, 211, 238, 0.45);
+      border: 1.5px solid var(--cyan);
+      box-shadow: 0 0 16px rgba(34, 211, 238, 0.5);
+      transition: transform 0.04s linear;
+    }
+
+    /* ============================================================
+       PANEL "INVITAR" (QR del link actual) — panel nuevo aislado
+       ============================================================ */
+    #boton-invitar {
+      position: absolute;
+      top: 18px;
+      right: 18px;
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 11px 16px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: var(--cyan);
+      cursor: pointer;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+    #boton-invitar:hover { transform: translateY(-1px); background: rgba(34, 211, 238, 0.12); }
+    /* Iconito QR dibujado con gradientes (sin imágenes externas) */
+    #boton-invitar .icono-qr {
+      width: 15px;
+      height: 15px;
+      display: inline-block;
+      border: 1.5px solid var(--cyan);
+      border-radius: 3px;
+      background:
+        linear-gradient(var(--cyan), var(--cyan)) 2px 2px / 3px 3px no-repeat,
+        linear-gradient(var(--cyan), var(--cyan)) 8px 2px / 3px 3px no-repeat,
+        linear-gradient(var(--cyan), var(--cyan)) 2px 8px / 3px 3px no-repeat,
+        linear-gradient(var(--cyan), var(--cyan)) 8px 8px / 3px 3px no-repeat;
+    }
+
+    /* Modal centrado con backdrop (mismo lenguaje que el overlay de entrada) */
+    #modal-invitar {
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(5, 8, 16, 0.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    #modal-invitar.oculto { display: none; }
+    #tarjeta-invitar {
+      position: relative;
+      width: 340px;
+      max-width: calc(100vw - 40px);
+      padding: 28px 26px 24px;
+      text-align: center;
+    }
+    #tarjeta-invitar .cerrar {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      background: none;
+      border: none;
+      color: var(--texto-tenue);
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
+    #tarjeta-invitar .cerrar:hover { color: var(--texto); }
+    #tarjeta-invitar h2 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    #tarjeta-invitar .invitar-sub {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--texto-tenue);
+      margin-bottom: 18px;
+    }
+    /* Caja blanca alrededor del QR (zona de silencio para escanear bien) */
+    #qr-contenedor {
+      width: 232px;
+      height: 232px;
+      margin: 0 auto 16px;
+      padding: 10px;
+      background: #ffffff;
+      border-radius: var(--radio-sm);
+      box-shadow: 0 0 24px rgba(34, 211, 238, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #qr-contenedor img, #qr-contenedor canvas { display: block; }
+    #qr-contenedor .qr-error {
+      font-size: 12px;
+      color: #b00;
+      padding: 0 10px;
+    }
+    #tarjeta-invitar .invitar-otro {
+      font-size: 11.5px;
+      letter-spacing: 0.3px;
+      color: var(--texto-tenue);
+      margin-bottom: 8px;
+    }
+    .link-fila {
+      display: flex;
+      gap: 8px;
+    }
+    #link-invitar {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      font-family: ui-monospace, 'Cascadia Code', monospace;
+      font-size: 12px;
+      color: var(--texto);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--borde);
+      border-radius: var(--radio-sm);
+      outline: none;
+    }
+    #link-invitar:focus { border-color: var(--cyan); }
+    #copiar-link {
+      padding: 0 14px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--cyan);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #copiar-link:hover { background: rgba(34, 211, 238, 0.12); }
+
+    /* ============================================================
+       RESPONSIVE — móvil / pantallas estrechas
+       Los paneles se reducen o se reposicionan para no saturar.
+       ============================================================ */
+    @media (max-width: 720px) {
+      #cabecera { top: 12px; left: 12px; padding: 9px 13px; gap: 10px; }
+      #cabecera .logo { width: 28px; height: 28px; }
+      #cabecera .titulo { font-size: 14px; }
+      #cabecera .subtitulo { display: none; }
+
+      #panel-participantes {
+        top: 74px;
+        left: 12px;
+        width: 168px;
+        padding: 11px 13px;
+      }
+      #panel-planeta {
+        top: auto;
+        bottom: 70px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+        max-width: 320px;
+        margin-left: auto;
+        padding: 14px 16px;
+      }
+      #panel-feed {
+        bottom: 12px;
+        left: 12px;
+        width: calc(100vw - 24px);
+        max-width: 320px;
+        max-height: 130px;
+      }
+      #boton-mapa { bottom: 12px; right: 12px; padding: 10px 13px; }
+      #mapa-tecnico {
+        bottom: 60px;
+        right: 12px;
+        left: 12px;
+        width: auto;
+      }
+      #boton-invitar { top: 12px; right: 12px; padding: 9px 13px; }
+      #tarjeta-entrada { padding: 28px 24px; }
+    }
+
+    /* Pantallas muy bajas (móvil horizontal): feed colapsa altura */
+    @media (max-height: 520px) {
+      #panel-feed { max-height: 96px; }
+      #panel-participantes { top: 70px; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- ===== LIENZO 3D (Three.js dibuja aquí) ===== -->
+  <canvas id="lienzo3d"></canvas>
+
+  <!-- ===== CAPA DE ETIQUETAS DE NOMBRE (divs proyectados) ===== -->
+  <div id="capa-etiquetas"></div>
+
+  <!-- ===== JOYSTICK VIRTUAL (táctil) ===== -->
+  <div id="joystick"><div class="perilla"></div></div>
+
+  <!-- ===== CAPA HUD ===== -->
+  <div id="hud">
+
+    <!-- Título + badge de modo -->
+    <header id="cabecera" class="vidrio">
+      <div class="logo"></div>
+      <div class="marca">
+        <span class="titulo">Observatorio Virtual</span>
+        <span class="subtitulo">Astronomía · mundo compartido</span>
+      </div>
+      <span id="badge-modo">
+        <span class="punto"></span>
+        <span id="badge-modo-texto">Modo Local</span>
+      </span>
+    </header>
+
+    <!-- Panel de participantes -->
+    <aside id="panel-participantes" class="vidrio">
+      <div class="panel-titulo">
+        <span>Participantes</span>
+        <span class="contador" id="contador-participantes">0</span>
+      </div>
+      <ul id="lista-participantes">
+        <li class="vacio">Aún no hay nadie en la sala.</li>
+      </ul>
+    </aside>
+
+    <!-- Feed de actividad -->
+    <section id="panel-feed" class="vidrio">
+      <div class="panel-titulo"><span>Actividad</span></div>
+      <ul id="lista-feed">
+        <li class="vacio">La actividad aparecerá aquí.</li>
+      </ul>
+    </section>
+
+    <!-- Panel de info de planeta (oculto hasta seleccionar uno) -->
+    <aside id="panel-planeta" class="vidrio oculto">
+      <div class="nombre-planeta" id="planeta-nombre">—</div>
+      <div class="etiqueta-planeta">Ficha del planeta</div>
+      <div class="datos" id="planeta-datos"></div>
+      <div class="curiosidad" id="planeta-curiosidad"></div>
+    </aside>
+
+    <!-- Botón toggle del Mapa técnico -->
+    <button id="boton-mapa" class="vidrio">
+      <span class="icono"></span>
+      <span>Mapa técnico</span>
+    </button>
+
+    <!-- Panel Mapa técnico (oculto por defecto) -->
+    <section id="mapa-tecnico" class="vidrio oculto">
+      <div class="encabezado-mapa">
+        <h2>Mapa técnico — qué ocurre por debajo</h2>
+        <button class="cerrar" id="cerrar-mapa" aria-label="Cerrar">&times;</button>
+      </div>
+      <p class="nota-modo">
+        <strong>MODO LOCAL:</strong> estos eventos son simulados;
+        en la Fase 2 viajan por WebSocket.
+      </p>
+      <ul id="filas-mapa">
+        <li class="fila" data-event="player:join">
+          <span class="en-pantalla">Entrar a la sala</span>
+          <span class="concepto">Spawn del jugador (NetworkObject)</span>
+          <span class="event-key">player:join</span>
+        </li>
+        <li class="fila" data-event="player:move">
+          <span class="en-pantalla">Moverte (tú o los bots)</span>
+          <span class="concepto">Sincronización de estado (NetworkVariable) / interpolación</span>
+          <span class="event-key">player:move</span>
+        </li>
+        <li class="fila" data-event="planet:select">
+          <span class="en-pantalla">Seleccionar un planeta</span>
+          <span class="concepto">Evento replicado (RPC)</span>
+          <span class="event-key">planet:select</span>
+        </li>
+        <li class="fila" data-event="player:move">
+          <span class="en-pantalla">Otros avatares moviéndose</span>
+          <span class="concepto">Interpolación de jugadores remotos</span>
+          <span class="event-key">player:move</span>
+        </li>
+        <li class="fila" data-event="roster:change">
+          <span class="en-pantalla">Lista de presentes</span>
+          <span class="concepto">Autoridad del servidor</span>
+          <span class="event-key">roster:change</span>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Botón Invitar (abre el modal con el QR del link actual) -->
+    <button id="boton-invitar" class="vidrio">
+      <span class="icono-qr"></span>
+      <span>Invitar</span>
+    </button>
+
+  </div>
+
+  <!-- ===== MODAL INVITAR (panel nuevo, aislado) ===== -->
+  <div id="modal-invitar" class="oculto">
+    <div id="tarjeta-invitar" class="vidrio">
+      <button class="cerrar" id="cerrar-invitar" aria-label="Cerrar">&times;</button>
+      <h2>Invita a la sala</h2>
+      <p class="invitar-sub">Escanea este código con la cámara del móvil para
+         abrir <strong>esta misma URL</strong> y entrar al observatorio.</p>
+      <div id="qr-contenedor"><!-- el QR se genera aquí en cliente --></div>
+      <p class="invitar-otro">¿Prefieres teclearlo? Copia el enlace:</p>
+      <div class="link-fila">
+        <input id="link-invitar" type="text" readonly />
+        <button id="copiar-link" class="vidrio">Copiar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== OVERLAY DE ENTRADA ===== -->
+  <div id="overlay-entrada">
+    <div id="tarjeta-entrada" class="vidrio">
+      <div class="logo-grande"></div>
+      <h1>Bienvenido al Observatorio</h1>
+      <p class="lema">
+        Un aula-laboratorio compartido en 3D. Elige tu nombre y color
+        para entrar a explorar el sistema solar con otros visitantes.
+      </p>
+
+      <div class="campo">
+        <label for="input-nombre">Tu nombre</label>
+        <input id="input-nombre" type="text" maxlength="18"
+               placeholder="Ej. Ana" autocomplete="off" spellcheck="false" />
+      </div>
+
+      <div class="campo">
+        <label>Color de tu avatar</label>
+        <div id="swatches">
+          <!-- 6 swatches; el JS marca el activo y guarda el color elegido -->
+          <div class="swatch" style="background:#22d3ee; color:#22d3ee" data-color="#22d3ee"></div>
+          <div class="swatch" style="background:#a78bfa; color:#a78bfa" data-color="#a78bfa"></div>
+          <div class="swatch" style="background:#f472b6; color:#f472b6" data-color="#f472b6"></div>
+          <div class="swatch" style="background:#facc15; color:#facc15" data-color="#facc15"></div>
+          <div class="swatch" style="background:#4ade80; color:#4ade80" data-color="#4ade80"></div>
+          <div class="swatch" style="background:#fb923c; color:#fb923c" data-color="#fb923c"></div>
+        </div>
+      </div>
+
+      <button id="boton-entrar" disabled>Entrar</button>
+    </div>
+  </div>
+
+  <!-- ===== THREE.js r128 desde cdnjs (script clásico, sin módulos ES) ===== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- ===== qrcodejs desde cdnjs (script clásico) — para el panel "Invitar" ===== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <!-- ===== APLICACIÓN ===== -->
+  <script>
+  'use strict';
+
+  /* ================================================================
+     OBSERVATORIO VIRTUAL DE ASTRONOMÍA — Fase 1 (modo local)
+     ----------------------------------------------------------------
+     Pasos implementados hasta ahora:
+       · Paso 1 — Esqueleto HTML + CSS (arriba).
+       · Paso 2 — Boot de Three.js (este script).
+       · Paso 3 — Entorno (sala planetario, estrellas, plataforma, luces).
+       · Paso 4 — Sistema solar holográfico (sol + 8 planetas con datos).
+       · Paso 5 — Cámara orbital propia (coordenadas esféricas).
+       · Paso 6 — Factory de avatares + spawn local con etiqueta de nombre.
+       · Paso 7 — Movimiento del jugador (WASD + joystick táctil).
+       · Paso 8 — EventBus + GameState (contrato §4).
+       · Paso 9 — HUD reactivo + selección de planetas (Raycaster).
+       · Paso 10 — BotManager (3 bots interpolados, desactivable por MODO_RED).
+       · Paso 11 — Mapa técnico con highlightConcept (función estrella).
+       · Paso 12 — Pulido + NetworkManager esqueleto (Fase 2).
+     ================================================================ */
+
+  /* ----------------------------------------------------------------
+     ESTADO DE RENDER (Three.js)
+     Objetos globales del motor 3D que el resto de pasos usará.
+     ---------------------------------------------------------------- */
+  var escena, camara, renderizador, reloj;
+  var lienzo = document.getElementById('lienzo3d');
+
+  /* ----------------------------------------------------------------
+     CONSTANTES DEL MUNDO
+     Valores compartidos por varios pasos (plataforma, sistema solar).
+     ---------------------------------------------------------------- */
+  var RADIO_PLATAFORMA = 9;        // radio de la plataforma (también límite del avatar, Paso 7)
+  var ALTURA_SISTEMA_SOLAR = 4.6;  // el sistema solar "flota" sobre la plataforma
+
+  // Referencias del Paso 4 que el bucle de animación y pasos futuros usan.
+  var grupoSistemaSolar;           // Object3D que contiene sol + órbitas
+  var sistemasOrbitales = [];      // [{ pivote, planeta, velOrbital, velRotacion }]
+  var mallasPlanetas = [];         // mallas de planeta (para el Raycaster del Paso 9)
+  var luzSol;                      // PointLight central (Paso 3, posicionada en Paso 4)
+
+  /* ----------------------------------------------------------------
+     ESTADO DE CÁMARA ORBITAL (Paso 5) — coordenadas esféricas
+     ---------------------------------------------------------------- */
+  var TARGET_CAMARA = new THREE.Vector3(0, 1.5, 0);
+  var camTheta = 0.6;              // ángulo azimutal (horizontal), radianes
+  var camPhi = 1.05;               // ángulo polar (desde el eje Y), radianes
+  var camRadio = 16;               // distancia al target
+  var PHI_MIN = 0.25, PHI_MAX = 1.48;   // clamp vertical (no pasar bajo el piso ni cenital)
+  var RADIO_MIN = 5, RADIO_MAX = 32;    // clamp del zoom
+
+  /* ----------------------------------------------------------------
+     ESTADO DE AVATAR LOCAL Y MOVIMIENTO (Pasos 6 y 7)
+     ---------------------------------------------------------------- */
+  var avatarLocal = null;          // THREE.Group del jugador local
+  var listaAvatares = [];          // avatares con etiqueta (local + bots futuros)
+  var VELOCIDAD_AVATAR = 4.2;      // unidades por segundo
+  var LIMITE_AVATAR = RADIO_PLATAFORMA - 0.7;  // no salir de la plataforma
+  var teclas = {};                 // estado de teclas WASD pulsadas
+  var joyAdelante = 0, joyLado = 0;  // entrada del joystick táctil [-1..1]
+
+  // Vector reutilizable para proyectar etiquetas (evita asignar por frame).
+  var _vProy = new THREE.Vector3();
+
+  /* ================================================================
+     PASO 8 — EVENTBUS + GAMESTATE (contrato estable para Fase 2)
+     ----------------------------------------------------------------
+     El HUD y la selección NO se tocan entre sí: todo viaja por el bus.
+     En Fase 1 emiten el jugador local y los bots (Paso 10); en Fase 2
+     los emitirá el NetworkManager al recibir mensajes del servidor.
+     El HUD no cambia. Contrato (§4 del plan):
+
+       player:join    { id, nombre, color, x, z }
+       player:move    { id, x, z, rot }
+       player:leave   { id }
+       planet:select  { planetId, porId, porNombre }
+       roster:change  { players: [{ id, nombre, color }] }
+     ================================================================ */
+  var EventBus = {
+    _oyentes: {},
+    // Suscribirse a un evento.
+    on: function (evento, fn) {
+      if (!this._oyentes[evento]) this._oyentes[evento] = [];
+      this._oyentes[evento].push(fn);
+    },
+    // Emitir un evento a todos los suscritos (y registrarlo en consola).
+    emit: function (evento, datos) {
+      console.log('[bus] ' + evento, datos);
+      var lista = this._oyentes[evento];
+      if (!lista) return;
+      for (var i = 0; i < lista.length; i++) lista[i](datos);
+    }
+  };
+
+  // Fuente de verdad del cliente. En Fase 2 esta fuente vive en el servidor.
+  var GameState = {
+    localPlayer: null,     // { id, nombre, color, x, z, rot }
+    remotePlayers: {},     // map id → { id, nombre, color, x, z, rot, ... }
+    selectedPlanet: null,  // planetId del último planeta seleccionado
+    activityFeed: []       // [{ texto, hora }] (más reciente al final)
+  };
+
+  // Throttle para no inundar el bus con player:move (Paso 7/8).
+  var _ultimoMoveEmit = 0;
+  var INTERVALO_MOVE_MS = 100;
+
+  // Construye el array de roster a partir de local + remotos.
+  function construirRoster() {
+    var arr = [];
+    if (GameState.localPlayer) {
+      arr.push({
+        id: GameState.localPlayer.id,
+        nombre: GameState.localPlayer.nombre,
+        color: GameState.localPlayer.color
+      });
+    }
+    for (var id in GameState.remotePlayers) {
+      var p = GameState.remotePlayers[id];
+      arr.push({ id: p.id, nombre: p.nombre, color: p.color });
+    }
+    return arr;
+  }
+
+  // Busca los datos educativos de un planeta por su id.
+  function datosPlanetaPorId(id) {
+    for (var i = 0; i < DATOS_PLANETAS.length; i++) {
+      if (DATOS_PLANETAS[i].id === id) return DATOS_PLANETAS[i];
+    }
+    return null;
+  }
+
+  /* ----------------------------------------------------------------
+     BANDERA DE MODO (Paso 10/12)
+     MODO_RED = hay ?ws= en la URL → la red alimenta el bus (Fase 2) y
+     el BotManager queda desactivado. Sin ?ws= → modo local con bots.
+     ---------------------------------------------------------------- */
+  var MODO_RED = new URLSearchParams(window.location.search).has('ws');
+
+  // Bots eliminados: nunca aparecen (ni en modo local). Cambiar a true
+  // si alguna vez se quiere recuperar la simulación de la Fase 1.
+  var BOTS_HABILITADOS = false;
+
+  // Referencias para el ajuste de rendimiento del Paso 12.
+  var _geoEstrellas = null, _cantEstrellas = 0, _estrellasReducidas = false;
+  var _tiempoTotal = 0;          // acumulador para el flotado holográfico
+  // Medición de FPS (Paso 12).
+  var _fpsAcum = 0, _fpsFrames = 0;
+  var _fpsWarmup = 90;           // frames ignorados al inicio (evita falsos positivos)
+
+  // Pixel ratio objetivo: tope 2 normalmente; 1 si se redujo por bajo FPS.
+  // Centralizado para que el resize NO deshaga el ajuste de rendimiento.
+  function pixelRatioObjetivo() {
+    return _estrellasReducidas ? 1 : Math.min(window.devicePixelRatio, 2);
+  }
+
+  /* ----------------------------------------------------------------
+     PASO 2 — BOOT DE THREE.js
+     Renderer con antialias + alpha (para ver el degradado CSS de
+     respaldo detrás), escena, cámara perspectiva, reloj y resize.
+     ---------------------------------------------------------------- */
+  function inicializarTresD() {
+    // --- Renderer ---
+    renderizador = new THREE.WebGLRenderer({
+      canvas: lienzo,
+      antialias: true,
+      alpha: true          // fondo transparente: deja ver el degradado del CSS
+    });
+    renderizador.setSize(window.innerWidth, window.innerHeight);
+    // Limitar el devicePixelRatio protege el rendimiento en móvil.
+    renderizador.setPixelRatio(pixelRatioObjetivo());
+    renderizador.setClearColor(0x000000, 0); // transparente
+
+    // --- Escena ---
+    escena = new THREE.Scene();
+
+    // --- Cámara perspectiva (gobernada por coordenadas esféricas, Paso 5) ---
+    camara = new THREE.PerspectiveCamera(
+      55,                                      // campo de visión (grados)
+      window.innerWidth / window.innerHeight,  // relación de aspecto
+      0.1,                                     // plano cercano
+      1000                                     // plano lejano
+    );
+    actualizarCamara(); // coloca la cámara según camTheta/camPhi/camRadio
+
+    // --- Reloj (delta time para animaciones e interpolación) ---
+    reloj = new THREE.Clock();
+
+    // --- Construir el mundo ---
+    crearEntorno();        // Paso 3: sala, estrellas, plataforma, luces
+    crearSistemaSolar();   // Paso 4: sol + 8 planetas
+
+    // --- Eventos de ventana e interacción ---
+    window.addEventListener('resize', alRedimensionar);
+    inicializarControlesCamara();  // Paso 5: ratón + táctil
+    inicializarControlesMovimiento(); // Paso 7: teclado + joystick
+
+    // --- Arrancar el bucle de render ---
+    requestAnimationFrame(bucleAnimacion);
+  }
+
+  /* ================================================================
+     PASO 3 — ENTORNO (SALA PLANETARIO)
+     Domo oscuro envolvente, campo estelar, plataforma circular con
+     anillo emisivo cyan y luces de ambiente + puntual.
+     ================================================================ */
+  function crearEntorno() {
+    // --- Domo / sala oscura (esfera grande vista desde dentro) ---
+    // BackSide hace que veamos su cara interna: nos envuelve como un
+    // planetario. Material básico para que no dependa de las luces.
+    var geoDomo = new THREE.SphereGeometry(60, 32, 16);
+    var matDomo = new THREE.MeshBasicMaterial({
+      color: 0x070b16,
+      side: THREE.BackSide
+    });
+    var domo = new THREE.Mesh(geoDomo, matDomo);
+    escena.add(domo);
+
+    // --- Campo estelar: ~3000 estrellas como Points ---
+    crearCampoEstelar(3000);
+
+    // --- Plataforma circular ---
+    // Cilindro muy plano = disco. Material oscuro semi-reflectante.
+    var geoPlataforma = new THREE.CylinderGeometry(
+      RADIO_PLATAFORMA, RADIO_PLATAFORMA, 0.4, 64
+    );
+    var matPlataforma = new THREE.MeshStandardMaterial({
+      color: 0x0d1424,
+      metalness: 0.6,
+      roughness: 0.35,
+      emissive: 0x020912
+    });
+    var plataforma = new THREE.Mesh(geoPlataforma, matPlataforma);
+    plataforma.position.y = -0.2; // su cara superior queda en y = 0
+    escena.add(plataforma);
+
+    // --- Anillo emisivo cyan en el borde de la plataforma ---
+    var geoAnillo = new THREE.RingGeometry(
+      RADIO_PLATAFORMA - 0.35, RADIO_PLATAFORMA + 0.05, 96
+    );
+    var matAnillo = new THREE.MeshBasicMaterial({
+      color: 0x22d3ee,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.9
+    });
+    var anillo = new THREE.Mesh(geoAnillo, matAnillo);
+    anillo.rotation.x = -Math.PI / 2;  // tumbar el anillo al plano horizontal
+    anillo.position.y = 0.02;          // justo sobre la plataforma
+    escena.add(anillo);
+
+    // Segundo anillo interior, más tenue, para dar profundidad holográfica.
+    var geoAnillo2 = new THREE.RingGeometry(
+      RADIO_PLATAFORMA * 0.5 - 0.06, RADIO_PLATAFORMA * 0.5, 96
+    );
+    var matAnillo2 = new THREE.MeshBasicMaterial({
+      color: 0x22d3ee,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.25
+    });
+    var anillo2 = new THREE.Mesh(geoAnillo2, matAnillo2);
+    anillo2.rotation.x = -Math.PI / 2;
+    anillo2.position.y = 0.02;
+    escena.add(anillo2);
+
+    // --- Luces ---
+    // Ambiente tenue para que nada quede totalmente negro.
+    var luzAmbiente = new THREE.AmbientLight(0x33507a, 0.55);
+    escena.add(luzAmbiente);
+
+    // Luz puntual desde el centro del sistema solar (hará de "sol"):
+    // la posición real se afina en crearSistemaSolar().
+    luzSol = new THREE.PointLight(0xfff1cc, 1.4, 120, 1.6);
+    luzSol.position.set(0, ALTURA_SISTEMA_SOLAR, 0);
+    escena.add(luzSol);
+
+    // Un leve relleno cyan desde abajo realza el aire holográfico.
+    var luzRelleno = new THREE.PointLight(0x22d3ee, 0.35, 40);
+    luzRelleno.position.set(0, -2, 0);
+    escena.add(luzRelleno);
+  }
+
+  /* ----------------------------------------------------------------
+     CAMPO ESTELAR — nube de N puntos repartidos en una capa esférica.
+     ---------------------------------------------------------------- */
+  function crearCampoEstelar(cantidad) {
+    var posiciones = new Float32Array(cantidad * 3);
+    for (var i = 0; i < cantidad; i++) {
+      // Distribución uniforme sobre una esfera (radio entre 30 y 55)
+      // para que las estrellas envuelvan la escena sin solaparse al domo.
+      var radio = 30 + Math.random() * 25;
+      var theta = Math.random() * Math.PI * 2;     // ángulo horizontal
+      var phi = Math.acos(2 * Math.random() - 1);  // ángulo polar uniforme
+      var sinPhi = Math.sin(phi);
+      posiciones[i * 3]     = radio * sinPhi * Math.cos(theta);
+      posiciones[i * 3 + 1] = radio * Math.cos(phi);
+      posiciones[i * 3 + 2] = radio * sinPhi * Math.sin(theta);
+    }
+
+    var geoEstrellas = new THREE.BufferGeometry();
+    geoEstrellas.setAttribute('position', new THREE.BufferAttribute(posiciones, 3));
+    _geoEstrellas = geoEstrellas;   // referencia para reducir si baja el FPS (Paso 12)
+    _cantEstrellas = cantidad;
+
+    var matEstrellas = new THREE.PointsMaterial({
+      color: 0xcfe3ff,
+      size: 0.35,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.9
+    });
+
+    var estrellas = new THREE.Points(geoEstrellas, matEstrellas);
+    escena.add(estrellas);
+  }
+
+  /* ================================================================
+     PASO 4 — SISTEMA SOLAR HOLOGRÁFICO
+     Sol emisivo central + 8 planetas. Cada planeta vive dentro de un
+     Object3D "pivote" centrado en el sol; al rotar el pivote sobre Y,
+     el planeta describe su órbita. Velocidades distintas por planeta.
+
+     IMPORTANTE: tamaños y distancias están ESCALADOS para caber en la
+     plataforma (no son a escala real). Los datos educativos de
+     `userData` (diámetro, distancia, día, año, lunas, curiosidad) SÍ
+     son reales — son los que mostrará el panel del Paso 9.
+     ================================================================ */
+
+  // Tabla de planetas. Campos `*Visual` = estética; el resto = datos reales (§5).
+  var DATOS_PLANETAS = [
+    {
+      id: 'mercurio', nombre: 'Mercurio', color: 0x9c8f86,
+      radioVisual: 0.18, radioOrbita: 1.6, velOrbital: 0.52, velRotacion: 0.30,
+      diametroKm: 4879, distanciaSolMillonesKm: 58,
+      duracionDia: '58.6 días', duracionAnio: '88 días', lunas: 0,
+      datoCurioso: 'El más cercano al Sol; sus días duran más que sus años.'
+    },
+    {
+      id: 'venus', nombre: 'Venus', color: 0xd9a066,
+      radioVisual: 0.28, radioOrbita: 2.3, velOrbital: 0.40, velRotacion: 0.10,
+      diametroKm: 12104, distanciaSolMillonesKm: 108,
+      duracionDia: '243 días', duracionAnio: '225 días', lunas: 0,
+      datoCurioso: 'Gira al revés y es el planeta más caliente del sistema solar.'
+    },
+    {
+      id: 'tierra', nombre: 'Tierra', color: 0x4a90d9,
+      radioVisual: 0.30, radioOrbita: 3.1, velOrbital: 0.32, velRotacion: 0.45,
+      diametroKm: 12742, distanciaSolMillonesKm: 150,
+      duracionDia: '24 horas', duracionAnio: '365 días', lunas: 1,
+      datoCurioso: 'El único mundo conocido con vida.'
+    },
+    {
+      id: 'marte', nombre: 'Marte', color: 0xc1440e,
+      radioVisual: 0.22, radioOrbita: 3.9, velOrbital: 0.26, velRotacion: 0.42,
+      diametroKm: 6779, distanciaSolMillonesKm: 228,
+      duracionDia: '24.6 horas', duracionAnio: '687 días', lunas: 2,
+      datoCurioso: 'Alberga el volcán más grande conocido: el Monte Olimpo.'
+    },
+    {
+      id: 'jupiter', nombre: 'Júpiter', color: 0xd8a47f,
+      radioVisual: 0.64, radioOrbita: 5.0, velOrbital: 0.17, velRotacion: 0.70,
+      diametroKm: 139820, distanciaSolMillonesKm: 778,
+      duracionDia: '9.9 horas', duracionAnio: '12 años', lunas: 95,
+      datoCurioso: 'Su Gran Mancha Roja es una tormenta más grande que la Tierra.'
+    },
+    {
+      id: 'saturno', nombre: 'Saturno', color: 0xe3c08d,
+      radioVisual: 0.56, radioOrbita: 6.1, velOrbital: 0.13, velRotacion: 0.65,
+      diametroKm: 116460, distanciaSolMillonesKm: 1434,
+      duracionDia: '10.7 horas', duracionAnio: '29 años', lunas: 146,
+      datoCurioso: 'Sus anillos son hielo y roca; flotaría en agua por su baja densidad.'
+    },
+    {
+      id: 'urano', nombre: 'Urano', color: 0x9fe0e6,
+      radioVisual: 0.42, radioOrbita: 7.0, velOrbital: 0.10, velRotacion: 0.55,
+      diametroKm: 50724, distanciaSolMillonesKm: 2871,
+      duracionDia: '17 horas', duracionAnio: '84 años', lunas: 28,
+      datoCurioso: 'Rota casi acostado sobre su órbita.'
+    },
+    {
+      id: 'neptuno', nombre: 'Neptuno', color: 0x3f54ba,
+      radioVisual: 0.40, radioOrbita: 7.8, velOrbital: 0.08, velRotacion: 0.55,
+      diametroKm: 49244, distanciaSolMillonesKm: 4495,
+      duracionDia: '16 horas', duracionAnio: '165 años', lunas: 16,
+      datoCurioso: 'Tiene los vientos más rápidos del sistema solar.'
+    }
+  ];
+
+  function crearSistemaSolar() {
+    // Grupo contenedor: nos permite "flotar" todo el sistema sobre la
+    // plataforma moviendo un solo Object3D.
+    grupoSistemaSolar = new THREE.Object3D();
+    grupoSistemaSolar.position.y = ALTURA_SISTEMA_SOLAR;
+    escena.add(grupoSistemaSolar);
+
+    // Geometría unitaria de esfera reutilizada por sol y planetas:
+    // cada malla la escala a su radioVisual (reúso por rendimiento).
+    var geoEsfera = new THREE.SphereGeometry(1, 32, 24);
+
+    // Textura de halo (degradado radial) compartida para los brillos.
+    var texHalo = crearTexturaHalo();
+
+    // --- Sol ---
+    var matSol = new THREE.MeshBasicMaterial({ color: 0xffd27f });
+    var sol = new THREE.Mesh(geoEsfera, matSol);
+    sol.scale.setScalar(0.85);
+    grupoSistemaSolar.add(sol);
+
+    // Halo del sol (sprite aditivo grande).
+    var halaSol = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: texHalo, color: 0xffcf87,
+      blending: THREE.AdditiveBlending, transparent: true, depthWrite: false
+    }));
+    halaSol.scale.setScalar(4.0);
+    grupoSistemaSolar.add(halaSol);
+
+    // La luz puntual del sol vive donde flota el sistema solar.
+    if (luzSol) luzSol.position.set(0, ALTURA_SISTEMA_SOLAR, 0);
+
+    // --- Planetas ---
+    for (var i = 0; i < DATOS_PLANETAS.length; i++) {
+      var d = DATOS_PLANETAS[i];
+
+      // Pivote centrado en el sol; rotarlo sobre Y mueve la órbita.
+      var pivote = new THREE.Object3D();
+      grupoSistemaSolar.add(pivote);
+
+      // Material holográfico: color propio con leve emisión para que
+      // "brille" aunque esté en sombra; sutil transparencia.
+      var matPlaneta = new THREE.MeshStandardMaterial({
+        color: d.color,
+        emissive: d.color,
+        emissiveIntensity: 0.25,
+        roughness: 0.55,
+        metalness: 0.1,
+        transparent: true,
+        opacity: 0.96
+      });
+
+      var planeta = new THREE.Mesh(geoEsfera, matPlaneta);
+      planeta.scale.setScalar(d.radioVisual);
+      planeta.position.x = d.radioOrbita;
+
+      // Guardar los datos educativos reales en el propio objeto 3D.
+      // El Raycaster del Paso 9 leerá esto para llenar la ficha.
+      planeta.userData = d;
+
+      pivote.add(planeta);
+
+      // Halo tenue del planeta (da el aire holográfico pedido).
+      var halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: texHalo, color: d.color,
+        blending: THREE.AdditiveBlending, transparent: true,
+        opacity: 0.6, depthWrite: false
+      }));
+      halo.scale.setScalar(d.radioVisual * 3.2);
+      planeta.add(halo);
+
+      // Saturno: anillo distintivo.
+      if (d.id === 'saturno') {
+        var geoAnilloSat = new THREE.RingGeometry(1.4, 2.2, 48);
+        var matAnilloSat = new THREE.MeshBasicMaterial({
+          color: 0xe3c08d, side: THREE.DoubleSide,
+          transparent: true, opacity: 0.5
+        });
+        var anilloSat = new THREE.Mesh(geoAnilloSat, matAnilloSat);
+        anilloSat.rotation.x = -Math.PI / 2.2;
+        planeta.add(anilloSat);
+      }
+
+      // Anillo-guía de la órbita (círculo tenue sobre el plano del sistema).
+      var geoOrbita = new THREE.RingGeometry(
+        d.radioOrbita - 0.012, d.radioOrbita + 0.012, 96
+      );
+      var matOrbita = new THREE.MeshBasicMaterial({
+        color: 0x22d3ee, side: THREE.DoubleSide,
+        transparent: true, opacity: 0.12
+      });
+      var orbita = new THREE.Mesh(geoOrbita, matOrbita);
+      orbita.rotation.x = -Math.PI / 2;
+      grupoSistemaSolar.add(orbita);
+
+      // Fase inicial aleatoria para que no arranquen alineados.
+      pivote.rotation.y = Math.random() * Math.PI * 2;
+
+      // Registrar para animar en el bucle.
+      sistemasOrbitales.push({
+        pivote: pivote,
+        planeta: planeta,
+        velOrbital: d.velOrbital,
+        velRotacion: d.velRotacion
+      });
+      mallasPlanetas.push(planeta);
+    }
+  }
+
+  /* ----------------------------------------------------------------
+     TEXTURA DE HALO — degradado radial blanco→transparente en canvas.
+     Reutilizada por todos los sprites de brillo (sol y planetas).
+     ---------------------------------------------------------------- */
+  function crearTexturaHalo() {
+    var tam = 128;
+    var canvas = document.createElement('canvas');
+    canvas.width = canvas.height = tam;
+    var ctx = canvas.getContext('2d');
+    var grad = ctx.createRadialGradient(
+      tam / 2, tam / 2, 0, tam / 2, tam / 2, tam / 2
+    );
+    grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.25, 'rgba(255,255,255,0.55)');
+    grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, tam, tam);
+    return new THREE.CanvasTexture(canvas);
+  }
+
+  /* ================================================================
+     PASO 5 — CÁMARA ORBITAL PROPIA (coordenadas esféricas)
+     Sin OrbitControls. theta/phi/radio alrededor de TARGET_CAMARA.
+     ================================================================ */
+
+  // Convierte (theta, phi, radio) a posición cartesiana y mira al target.
+  function actualizarCamara() {
+    var sinPhi = Math.sin(camPhi);
+    camara.position.x = TARGET_CAMARA.x + camRadio * sinPhi * Math.sin(camTheta);
+    camara.position.y = TARGET_CAMARA.y + camRadio * Math.cos(camPhi);
+    camara.position.z = TARGET_CAMARA.z + camRadio * sinPhi * Math.cos(camTheta);
+    camara.lookAt(TARGET_CAMARA);
+  }
+
+  function inicializarControlesCamara() {
+    // ---------------- Ratón ----------------
+    var arrastrando = false;
+    var ultimoX = 0, ultimoY = 0;
+
+    lienzo.addEventListener('mousedown', function (e) {
+      arrastrando = true;
+      ultimoX = e.clientX;
+      ultimoY = e.clientY;
+    });
+    // mousemove/up en window para no perder el arrastre fuera del canvas.
+    window.addEventListener('mousemove', function (e) {
+      if (!arrastrando) return;
+      orbitar(e.clientX - ultimoX, e.clientY - ultimoY);
+      ultimoX = e.clientX;
+      ultimoY = e.clientY;
+    });
+    window.addEventListener('mouseup', function () { arrastrando = false; });
+
+    // Rueda → zoom (radio).
+    lienzo.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      acercar(e.deltaY * 0.02);
+    }, { passive: false });
+
+    // ---------------- Táctil ----------------
+    var tactilUltimoX = 0, tactilUltimoY = 0;
+    var pinchDistInicial = 0;
+    var pinchRadioInicial = 0;
+
+    lienzo.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 1) {
+        // 1 dedo → orbitar
+        tactilUltimoX = e.touches[0].clientX;
+        tactilUltimoY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        // 2 dedos → pinch zoom
+        pinchDistInicial = distanciaPinch(e.touches);
+        pinchRadioInicial = camRadio;
+      }
+    }, { passive: false });
+
+    lienzo.addEventListener('touchmove', function (e) {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        orbitar(
+          e.touches[0].clientX - tactilUltimoX,
+          e.touches[0].clientY - tactilUltimoY
+        );
+        tactilUltimoX = e.touches[0].clientX;
+        tactilUltimoY = e.touches[0].clientY;
+      } else if (e.touches.length === 2 && pinchDistInicial > 0) {
+        var distActual = distanciaPinch(e.touches);
+        // Acercar al separar los dedos, alejar al juntarlos.
+        camRadio = pinchRadioInicial * (pinchDistInicial / distActual);
+        camRadio = Math.max(RADIO_MIN, Math.min(RADIO_MAX, camRadio));
+      }
+    }, { passive: false });
+
+    // Aplica un delta de arrastre a theta/phi con clamp en phi.
+    function orbitar(dx, dy) {
+      camTheta -= dx * 0.005;
+      camPhi   -= dy * 0.005;
+      camPhi = Math.max(PHI_MIN, Math.min(PHI_MAX, camPhi));
+    }
+    // Aplica un delta al radio con clamp (zoom).
+    function acercar(delta) {
+      camRadio += delta;
+      camRadio = Math.max(RADIO_MIN, Math.min(RADIO_MAX, camRadio));
+    }
+    // Distancia euclídea entre los dos primeros toques (pinch).
+    function distanciaPinch(touches) {
+      var dx = touches[0].clientX - touches[1].clientX;
+      var dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy) || 1;
+    }
+  }
+
+  /* ================================================================
+     PASO 6 — FACTORY DE AVATARES + ETIQUETA DE NOMBRE
+     Cuerpo CylinderGeometry + cabeza SphereGeometry (CapsuleGeometry
+     NO existe en r128). La etiqueta es un div HTML proyectado.
+     ================================================================ */
+  function crearAvatar(nombre, color) {
+    var grupo = new THREE.Group();
+
+    var colTHREE = new THREE.Color(color);
+
+    // --- Cuerpo (cilindro) ---
+    var geoCuerpo = new THREE.CylinderGeometry(0.34, 0.34, 1.1, 20);
+    var matCuerpo = new THREE.MeshStandardMaterial({
+      color: colTHREE,
+      emissive: colTHREE,
+      emissiveIntensity: 0.18,
+      roughness: 0.5,
+      metalness: 0.15
+    });
+    var cuerpo = new THREE.Mesh(geoCuerpo, matCuerpo);
+    cuerpo.position.y = 0.55;   // base del cuerpo en y = 0 (sobre la plataforma)
+    grupo.add(cuerpo);
+
+    // --- Cabeza (esfera) ---
+    var geoCabeza = new THREE.SphereGeometry(0.3, 24, 16);
+    var matCabeza = new THREE.MeshStandardMaterial({
+      color: 0xf2f6ff,
+      emissive: colTHREE,
+      emissiveIntensity: 0.15,
+      roughness: 0.4,
+      metalness: 0.1
+    });
+    var cabeza = new THREE.Mesh(geoCabeza, matCabeza);
+    cabeza.position.y = 1.42;
+    grupo.add(cabeza);
+
+    // --- Anillo de base bajo los pies (toque holográfico) ---
+    var geoBase = new THREE.RingGeometry(0.36, 0.46, 32);
+    var matBase = new THREE.MeshBasicMaterial({
+      color: colTHREE, side: THREE.DoubleSide,
+      transparent: true, opacity: 0.6
+    });
+    var base = new THREE.Mesh(geoBase, matBase);
+    base.rotation.x = -Math.PI / 2;
+    base.position.y = 0.02;
+    grupo.add(base);
+
+    // --- Etiqueta de nombre (div HTML) ---
+    var etiqueta = document.createElement('div');
+    etiqueta.className = 'etiqueta-nombre';
+    var punto = document.createElement('span');
+    punto.className = 'punto-color';
+    punto.style.background = color;
+    punto.style.color = color;
+    var texto = document.createElement('span');
+    texto.textContent = nombre;
+    etiqueta.appendChild(punto);
+    etiqueta.appendChild(texto);
+    document.getElementById('capa-etiquetas').appendChild(etiqueta);
+
+    // Guardar datos en el grupo para pasos posteriores (red, etiquetas...).
+    grupo.userData = {
+      nombre: nombre,
+      color: color,
+      etiqueta: etiqueta
+    };
+
+    return grupo;
+  }
+
+  // Crea y coloca el avatar del jugador local en la plataforma.
+  function spawnAvatarLocal(nombre, color) {
+    avatarLocal = crearAvatar(nombre, color);
+    // Aparece algo adelante del centro, sobre la plataforma.
+    var x = 0, z = 4;
+    avatarLocal.position.set(x, 0, z);
+    escena.add(avatarLocal);
+    listaAvatares.push(avatarLocal);
+
+    // --- Paso 8: registrar en GameState y emitir por el bus ---
+    GameState.localPlayer = {
+      id: 'local', nombre: nombre, color: color, x: x, z: z, rot: 0
+    };
+    EventBus.emit('player:join', {
+      id: 'local', nombre: nombre, color: color, x: x, z: z
+    });
+    EventBus.emit('roster:change', { players: construirRoster() });
+
+    // En táctil, mostrar el joystick.
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+      document.getElementById('joystick').classList.add('visible');
+    }
+
+    // Fase 2: presentar el join al servidor (NO-OP en modo local). Si el
+    // socket aún no abrió, queda guardado y se envía en onopen.
+    NetworkManager.enviarJoin(nombre, color);
+
+    // Paso 10: arrancar los bots al entrar (salvo en modo red).
+    BotManager.iniciar();
+  }
+
+  /* ----------------------------------------------------------------
+     ACTUALIZAR ETIQUETAS — proyectar cada avatar a coordenadas 2D.
+     ---------------------------------------------------------------- */
+  function actualizarEtiquetas() {
+    var ancho = window.innerWidth, alto = window.innerHeight;
+    for (var i = 0; i < listaAvatares.length; i++) {
+      var av = listaAvatares[i];
+      var div = av.userData.etiqueta;
+      if (!div) continue;
+
+      // Punto sobre la cabeza del avatar en el mundo.
+      _vProy.set(av.position.x, av.position.y + 2.05, av.position.z);
+      _vProy.project(camara);
+
+      // z > 1 significa que está detrás de la cámara: ocultar.
+      if (_vProy.z > 1) {
+        div.classList.add('oculta');
+        continue;
+      }
+      div.classList.remove('oculta');
+      var x = (_vProy.x * 0.5 + 0.5) * ancho;
+      var y = (-_vProy.y * 0.5 + 0.5) * alto;
+      div.style.left = x + 'px';
+      div.style.top = y + 'px';
+    }
+  }
+
+  /* ================================================================
+     PASO 7 — MOVIMIENTO DEL JUGADOR LOCAL
+     WASD (y flechas) en el plano XZ relativo a la orientación de la
+     cámara. En táctil, joystick virtual. Límite: radio de plataforma.
+     ================================================================ */
+  function inicializarControlesMovimiento() {
+    // ---------------- Teclado ----------------
+    window.addEventListener('keydown', function (e) {
+      teclas[normalizarTecla(e.key)] = true;
+    });
+    window.addEventListener('keyup', function (e) {
+      teclas[normalizarTecla(e.key)] = false;
+    });
+
+    // ---------------- Joystick táctil ----------------
+    var joystick = document.getElementById('joystick');
+    var perilla = joystick.querySelector('.perilla');
+    var radioMax = 42;  // desplazamiento máx. de la perilla en px
+    var activo = false;
+    var idToque = null;
+
+    function centro() {
+      var r = joystick.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
+    function mover(clientX, clientY) {
+      var c = centro();
+      var dx = clientX - c.x;
+      var dy = clientY - c.y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > radioMax) {            // limitar la perilla al borde
+        dx *= radioMax / dist;
+        dy *= radioMax / dist;
+      }
+      perilla.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+      joyLado = dx / radioMax;          // derecha = +
+      joyAdelante = -dy / radioMax;     // arriba = adelante
+    }
+    function soltar() {
+      activo = false;
+      idToque = null;
+      joyLado = 0;
+      joyAdelante = 0;
+      perilla.style.transform = 'translate(0px,0px)';
+    }
+
+    joystick.addEventListener('touchstart', function (e) {
+      e.preventDefault();
+      activo = true;
+      idToque = e.changedTouches[0].identifier;
+      mover(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+    }, { passive: false });
+
+    joystick.addEventListener('touchmove', function (e) {
+      e.preventDefault();
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === idToque) {
+          mover(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+        }
+      }
+    }, { passive: false });
+
+    joystick.addEventListener('touchend', function (e) {
+      for (var i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === idToque) { soltar(); }
+      }
+    }, { passive: false });
+    joystick.addEventListener('touchcancel', soltar);
+  }
+
+  // Mapea teclas a un identificador único (WASD + flechas), en minúscula.
+  function normalizarTecla(k) {
+    switch (k) {
+      case 'ArrowUp': return 'w';
+      case 'ArrowDown': return 's';
+      case 'ArrowLeft': return 'a';
+      case 'ArrowRight': return 'd';
+      default: return k.toLowerCase();
+    }
+  }
+
+  // Integra la entrada (teclado + joystick) y mueve el avatar local.
+  function actualizarMovimiento(dt) {
+    if (!avatarLocal) return;
+
+    // Entrada combinada: adelante/atrás y lado, en [-1..1] aprox.
+    var adelante = 0, lado = 0;
+    if (teclas['w']) adelante += 1;
+    if (teclas['s']) adelante -= 1;
+    if (teclas['d']) lado += 1;
+    if (teclas['a']) lado -= 1;
+    adelante += joyAdelante;
+    lado += joyLado;
+
+    if (adelante === 0 && lado === 0) return;
+
+    // Dirección "adelante" en XZ = del avatar hacia donde mira la cámara,
+    // o sea, alejándose de la cámara sobre el plano horizontal.
+    var fx = -Math.sin(camTheta);
+    var fz = -Math.cos(camTheta);
+    // Vector "derecha" = forward × up  →  (-fz, 0, fx)
+    var rx = -fz;
+    var rz = fx;
+
+    // Combinar y normalizar para que diagonal no sea más rápida.
+    var mx = fx * adelante + rx * lado;
+    var mz = fz * adelante + rz * lado;
+    var mag = Math.sqrt(mx * mx + mz * mz);
+    if (mag > 0.0001) {
+      mx /= mag;
+      mz /= mag;
+    }
+
+    var paso = VELOCIDAD_AVATAR * dt;
+    var nx = avatarLocal.position.x + mx * paso;
+    var nz = avatarLocal.position.z + mz * paso;
+
+    // Limitar al radio de la plataforma.
+    var distCentro = Math.sqrt(nx * nx + nz * nz);
+    if (distCentro > LIMITE_AVATAR) {
+      nx *= LIMITE_AVATAR / distCentro;
+      nz *= LIMITE_AVATAR / distCentro;
+    }
+    avatarLocal.position.x = nx;
+    avatarLocal.position.z = nz;
+
+    // Orientar el avatar hacia su dirección de marcha.
+    avatarLocal.rotation.y = Math.atan2(mx, mz);
+
+    // --- Paso 8: reflejar en GameState y emitir player:move (throttle) ---
+    if (GameState.localPlayer) {
+      GameState.localPlayer.x = nx;
+      GameState.localPlayer.z = nz;
+      GameState.localPlayer.rot = avatarLocal.rotation.y;
+
+      var ahora = performance.now();
+      if (ahora - _ultimoMoveEmit >= INTERVALO_MOVE_MS) {
+        _ultimoMoveEmit = ahora;
+        EventBus.emit('player:move', {
+          id: 'local', x: nx, z: nz, rot: avatarLocal.rotation.y
+        });
+      }
+
+      // Fase 2: enviar el movimiento al servidor (NO-OP en modo local).
+      NetworkManager.enviarMove(nx, nz, avatarLocal.rotation.y);
+    }
+  }
+
+  /* ----------------------------------------------------------------
+     RESIZE — mantener proporción correcta sin deformar la escena.
+     ---------------------------------------------------------------- */
+  function alRedimensionar() {
+    var ancho = window.innerWidth;
+    var alto = window.innerHeight;
+
+    camara.aspect = ancho / alto;
+    camara.updateProjectionMatrix();
+
+    renderizador.setSize(ancho, alto);
+    // Respeta el ajuste de rendimiento: no vuelve a subir el pixel ratio.
+    renderizador.setPixelRatio(pixelRatioObjetivo());
+  }
+
+  /* ----------------------------------------------------------------
+     BUCLE DE ANIMACIÓN
+     Punto único de actualización por frame. Aquí se irán colgando
+     la rotación de planetas (Paso 4), la cámara (Paso 5), la
+     interpolación de avatares (Pasos 7/10), etc.
+     ---------------------------------------------------------------- */
+  function bucleAnimacion() {
+    requestAnimationFrame(bucleAnimacion);
+
+    var dt = reloj.getDelta(); // segundos desde el frame anterior
+    if (dt > 0.1) dt = 0.1;    // evita saltos tras pestaña en segundo plano
+    _tiempoTotal += dt;
+
+    // --- Paso 4: órbitas y rotación propia de cada planeta ---
+    // dt mantiene la velocidad constante sea cual sea el FPS.
+    for (var i = 0; i < sistemasOrbitales.length; i++) {
+      var s = sistemasOrbitales[i];
+      s.pivote.rotation.y += s.velOrbital * dt;    // traslación (órbita)
+      s.planeta.rotation.y += s.velRotacion * dt;  // rotación sobre su eje
+    }
+
+    // --- Paso 12: leve flotado holográfico del sistema solar ---
+    if (grupoSistemaSolar) {
+      grupoSistemaSolar.position.y = ALTURA_SISTEMA_SOLAR + Math.sin(_tiempoTotal * 0.6) * 0.12;
+    }
+
+    // --- Paso 7: movimiento del jugador local ---
+    actualizarMovimiento(dt);
+
+    // --- Paso 10: simulación de bots e interpolación de remotos ---
+    BotManager.actualizar(dt);
+    actualizarAvataresRemotos(dt);
+
+    // --- Paso 5: aplicar la cámara orbital ---
+    actualizarCamara();
+
+    // --- Paso 6: reproyectar etiquetas de nombre a 2D ---
+    actualizarEtiquetas();
+
+    renderizador.render(escena, camara);
+
+    // --- Paso 12: ajuste de rendimiento según FPS medio ---
+    monitorearRendimiento(dt);
+  }
+
+  /* ----------------------------------------------------------------
+     PASO 12 — MONITOR DE RENDIMIENTO
+     Si el FPS medio cae por debajo del umbral, reduce el campo
+     estelar una vez (sin reconstruir geometría) para recuperar fluidez.
+     ---------------------------------------------------------------- */
+  function monitorearRendimiento(dt) {
+    if (_estrellasReducidas || dt <= 0) return;
+    // Ignorar los primeros frames: la carga inicial no representa el FPS real.
+    if (_fpsWarmup > 0) { _fpsWarmup--; return; }
+    _fpsAcum += 1 / dt;
+    _fpsFrames++;
+    if (_fpsFrames >= 120) {                 // ~cada 2-4 s
+      var fpsMedio = _fpsAcum / _fpsFrames;
+      _fpsAcum = 0; _fpsFrames = 0;
+      if (fpsMedio < 28 && _geoEstrellas) {
+        // Dibujar solo la mitad de las estrellas: alivia el relleno sin recrear.
+        _geoEstrellas.setDrawRange(0, Math.floor(_cantEstrellas / 2));
+        _estrellasReducidas = true;                      // activar ANTES de recalcular
+        renderizador.setPixelRatio(pixelRatioObjetivo()); // ahora devuelve 1
+        console.log('[perf] FPS bajo (' + fpsMedio.toFixed(0) + '): campo estelar reducido.');
+      }
+    }
+  }
+
+  /* ================================================================
+     PASO 9 — SELECCIÓN DE PLANETAS (Raycaster sobre clic/tap)
+     Distingue un clic/tap de un arrastre de cámara comparando el
+     desplazamiento del puntero. Solo emite por el bus; el resaltado
+     y la ficha los hacen los suscriptores (reactivo, listo para red).
+     ================================================================ */
+  function inicializarSeleccionPlanetas() {
+    var raycaster = new THREE.Raycaster();
+    var puntero = new THREE.Vector2();
+    var inicioX = 0, inicioY = 0, valido = false;
+
+    function intentarSeleccion(clientX, clientY) {
+      puntero.x = (clientX / window.innerWidth) * 2 - 1;
+      puntero.y = -(clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(puntero, camara);
+      // Solo contra las mallas de planeta (no recursivo: ignora halos/anillos).
+      var impactos = raycaster.intersectObjects(mallasPlanetas, false);
+      if (impactos.length > 0) {
+        seleccionarPlaneta(impactos[0].object.userData.id);
+      }
+    }
+
+    // --- Ratón: clic sin apenas arrastre = selección ---
+    lienzo.addEventListener('mousedown', function (e) {
+      inicioX = e.clientX; inicioY = e.clientY; valido = true;
+    });
+    window.addEventListener('mouseup', function (e) {
+      if (!valido) return;
+      valido = false;
+      var dx = e.clientX - inicioX, dy = e.clientY - inicioY;
+      if (Math.sqrt(dx * dx + dy * dy) < 8) intentarSeleccion(e.clientX, e.clientY);
+    });
+
+    // --- Táctil: tap de 1 dedo sin apenas desplazamiento = selección ---
+    lienzo.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 1) {
+        inicioX = e.touches[0].clientX;
+        inicioY = e.touches[0].clientY;
+        valido = true;
+      } else {
+        valido = false;  // 2 dedos = pinch, no selección
+      }
+    }, { passive: true });
+    lienzo.addEventListener('touchend', function (e) {
+      if (!valido || e.changedTouches.length === 0) return;
+      valido = false;
+      var t = e.changedTouches[0];
+      var dx = t.clientX - inicioX, dy = t.clientY - inicioY;
+      if (Math.sqrt(dx * dx + dy * dy) < 12) intentarSeleccion(t.clientX, t.clientY);
+    }, { passive: true });
+  }
+
+  // Emite planet:select por el bus. No toca el HUD ni el 3D directamente.
+  function seleccionarPlaneta(id) {
+    var por = GameState.localPlayer;
+    EventBus.emit('planet:select', {
+      planetId: id,
+      porId: por ? por.id : 'local',
+      porNombre: por ? por.nombre : 'Tú'
+    });
+
+    // Fase 2: avisar al servidor (NO-OP en modo local). Su eco para el
+    // propio local se ignora en NetworkManager para no duplicar.
+    NetworkManager.enviarSelect(id);
+  }
+
+  // Resalta visualmente el planeta seleccionado (sube emisión y tamaño).
+  var _planetaResaltado = null;
+  function resaltarPlaneta(id) {
+    if (_planetaResaltado) {
+      _planetaResaltado.material.emissiveIntensity = 0.25;
+      _planetaResaltado.scale.setScalar(_planetaResaltado.userData.radioVisual);
+      _planetaResaltado = null;
+    }
+    for (var i = 0; i < mallasPlanetas.length; i++) {
+      if (mallasPlanetas[i].userData.id === id) {
+        var m = mallasPlanetas[i];
+        m.material.emissiveIntensity = 0.9;
+        m.scale.setScalar(m.userData.radioVisual * 1.25);
+        _planetaResaltado = m;
+        break;
+      }
+    }
+  }
+
+  /* ================================================================
+     PASO 9 — HUD REACTIVO
+     Los paneles SOLO escuchan el bus; no saben si la fuente es el
+     jugador local, un bot o (en Fase 2) un WebSocket.
+     ================================================================ */
+  function inicializarHUDReactivo() {
+    // Roster → lista de participantes.
+    EventBus.on('roster:change', function (datos) {
+      renderParticipantes(datos.players);
+    });
+
+    // Entrada de un jugador → línea en el feed.
+    EventBus.on('player:join', function (datos) {
+      agregarFeed(datos.nombre + ' entró a la sala');
+    });
+
+    // Salida de un jugador → línea en el feed.
+    EventBus.on('player:leave', function (datos) {
+      var p = GameState.remotePlayers[datos.id];
+      agregarFeed((p ? p.nombre : 'Alguien') + ' salió de la sala');
+    });
+
+    // Selección de planeta → estado + resaltado + ficha + feed.
+    EventBus.on('planet:select', function (datos) {
+      GameState.selectedPlanet = datos.planetId;
+      resaltarPlaneta(datos.planetId);
+      renderFichaPlaneta(datos.planetId);
+      var d = datosPlanetaPorId(datos.planetId);
+      agregarFeed(datos.porNombre + ' seleccionó ' + (d ? d.nombre : datos.planetId));
+    });
+  }
+
+  // ---- Render: lista de participantes (con punto de color) ----
+  function renderParticipantes(players) {
+    var ul = document.getElementById('lista-participantes');
+    document.getElementById('contador-participantes').textContent = players.length;
+    ul.innerHTML = '';
+    if (!players.length) {
+      ul.innerHTML = '<li class="vacio">Aún no hay nadie en la sala.</li>';
+      return;
+    }
+    for (var i = 0; i < players.length; i++) {
+      var p = players[i];
+      var li = document.createElement('li');
+      var punto = document.createElement('span');
+      punto.className = 'punto-color';
+      punto.style.background = p.color;
+      punto.style.color = p.color;
+      var texto = document.createElement('span');
+      texto.textContent = p.nombre + (p.id === 'local' ? ' (tú)' : '');
+      li.appendChild(punto);
+      li.appendChild(texto);
+      ul.appendChild(li);
+    }
+  }
+
+  // ---- Render: ficha educativa del planeta ----
+  function renderFichaPlaneta(id) {
+    var d = datosPlanetaPorId(id);
+    if (!d) return;
+    document.getElementById('panel-planeta').classList.remove('oculto');
+    document.getElementById('planeta-nombre').textContent = d.nombre;
+
+    var cont = document.getElementById('planeta-datos');
+    cont.innerHTML = '';
+    agregarDato(cont, 'Diámetro', sepMiles(d.diametroKm) + ' km');
+    agregarDato(cont, 'Distancia al Sol', sepMiles(d.distanciaSolMillonesKm) + ' millones km');
+    agregarDato(cont, 'Duración del día', d.duracionDia);
+    agregarDato(cont, 'Duración del año', d.duracionAnio);
+    agregarDato(cont, 'Lunas', String(d.lunas));
+
+    document.getElementById('planeta-curiosidad').textContent = d.datoCurioso;
+  }
+
+  // Añade una fila clave/valor a la ficha.
+  function agregarDato(contenedor, clave, valor) {
+    var fila = document.createElement('div');
+    fila.className = 'dato';
+    var c = document.createElement('span');
+    c.className = 'clave';
+    c.textContent = clave;
+    var v = document.createElement('span');
+    v.className = 'valor';
+    v.textContent = valor;
+    fila.appendChild(c);
+    fila.appendChild(v);
+    contenedor.appendChild(fila);
+  }
+
+  // ---- Feed de actividad ----
+  function agregarFeed(texto) {
+    GameState.activityFeed.push({ texto: texto, hora: horaActual() });
+    // Mantener acotado el historial.
+    if (GameState.activityFeed.length > 30) GameState.activityFeed.shift();
+    renderFeed();
+  }
+  function renderFeed() {
+    var ul = document.getElementById('lista-feed');
+    ul.innerHTML = '';
+    var feed = GameState.activityFeed;
+    if (!feed.length) {
+      ul.innerHTML = '<li class="vacio">La actividad aparecerá aquí.</li>';
+      return;
+    }
+    // Más reciente arriba.
+    for (var i = feed.length - 1; i >= 0; i--) {
+      var li = document.createElement('li');
+      var hora = document.createElement('span');
+      hora.className = 'hora';
+      hora.textContent = feed[i].hora;
+      li.appendChild(hora);
+      li.appendChild(document.createTextNode(feed[i].texto));
+      ul.appendChild(li);
+    }
+  }
+
+  // ---- Utilidades de formato ----
+  // Separador de miles con espacio (estilo del plan: "4 879").
+  function sepMiles(n) {
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+  // Hora actual HH:MM.
+  function horaActual() {
+    var d = new Date();
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+
+  /* ================================================================
+     AVATARES REMOTOS (Pasos 8/10) — "lado cliente" reactivo
+     Se suscribe al bus y materializa a los demás jugadores. NO sabe si
+     el origen es un bot (Fase 1) o un WebSocket (Fase 2): mismos eventos.
+     Las posiciones entrantes SOLO escriben targetX/targetZ; el render
+     interpola hacia ahí (interpolación de jugadores remotos, §1 y §7).
+     ================================================================ */
+  function inicializarAvataresRemotos() {
+    // Alta de un jugador remoto.
+    EventBus.on('player:join', function (d) {
+      if (d.id === 'local' || GameState.remotePlayers[d.id]) return;
+      var grupo = crearAvatar(d.nombre, d.color);
+      grupo.position.set(d.x, 0, d.z);
+      escena.add(grupo);
+      listaAvatares.push(grupo);
+      GameState.remotePlayers[d.id] = {
+        id: d.id, nombre: d.nombre, color: d.color,
+        x: d.x, z: d.z, rot: 0,
+        targetX: d.x, targetZ: d.z, targetRot: 0,
+        grupo: grupo
+      };
+      // El roster cambió: notificar (mismo evento que emitirá el servidor).
+      EventBus.emit('roster:change', { players: construirRoster() });
+    });
+
+    // Movimiento remoto: solo fija el objetivo de interpolación.
+    EventBus.on('player:move', function (d) {
+      var p = GameState.remotePlayers[d.id];
+      if (!p) return;               // ignora al local o ids desconocidos
+      p.targetX = d.x;
+      p.targetZ = d.z;
+      p.targetRot = d.rot;
+    });
+
+    // Baja de un jugador remoto.
+    EventBus.on('player:leave', function (d) {
+      var p = GameState.remotePlayers[d.id];
+      if (!p) return;
+      escena.remove(p.grupo);
+      var idx = listaAvatares.indexOf(p.grupo);
+      if (idx >= 0) listaAvatares.splice(idx, 1);
+      if (p.grupo.userData.etiqueta) p.grupo.userData.etiqueta.remove();
+      delete GameState.remotePlayers[d.id];
+      EventBus.emit('roster:change', { players: construirRoster() });
+    });
+  }
+
+  // Interpola cada avatar remoto hacia su targetPosition (suaviza la red).
+  function actualizarAvataresRemotos(dt) {
+    var f = Math.min(1, 8 * dt);   // factor de suavizado dependiente de dt
+    for (var id in GameState.remotePlayers) {
+      var p = GameState.remotePlayers[id];
+      var g = p.grupo;
+      g.position.x += (p.targetX - g.position.x) * f;
+      g.position.z += (p.targetZ - g.position.z) * f;
+      p.x = g.position.x; p.z = g.position.z;
+
+      // Rotación por el ángulo más corto.
+      var dr = p.targetRot - g.rotation.y;
+      while (dr > Math.PI) dr -= Math.PI * 2;
+      while (dr < -Math.PI) dr += Math.PI * 2;
+      g.rotation.y += dr * f;
+    }
+  }
+
+  /* ================================================================
+     PASO 10 — BOTMANAGER (simulación de multiusuario)
+     3 bots que deambulan y seleccionan planetas, emitiendo EXACTAMENTE
+     los mismos eventos que enviará la red. Desactivable con MODO_RED
+     sin tocar el HUD: en Fase 2 el NetworkManager ocupa su lugar.
+     ================================================================ */
+  var BotManager = {
+    activo: false,
+    bots: [],
+    DEFINICIONES: [
+      { id: 'bot-ana',   nombre: 'Ana',   color: '#f472b6' },
+      { id: 'bot-luis',  nombre: 'Luis',  color: '#4ade80' },
+      { id: 'bot-sofia', nombre: 'Sofía', color: '#facc15' }
+    ],
+
+    iniciar: function () {
+      // Bots desactivados por completo (no aparecen ni en modo local).
+      // Para reactivarlos, pon BOTS_HABILITADOS = true arriba.
+      if (!BOTS_HABILITADOS || MODO_RED || this.activo) return;
+      this.activo = true;
+      for (var i = 0; i < this.DEFINICIONES.length; i++) {
+        var def = this.DEFINICIONES[i];
+        var pos = puntoAleatorioPlataforma();
+        var bot = {
+          id: def.id, nombre: def.nombre, color: def.color,
+          x: pos.x, z: pos.z, rot: 0,
+          targetX: pos.x, targetZ: pos.z,
+          velocidad: 1.5 + Math.random() * 0.9,
+          ultimoMove: 0,
+          tSeleccion: 3 + Math.random() * 4   // segundos hasta su 1ª selección
+        };
+        this.bots.push(bot);
+        // "Entra" igual que un jugador real (mismo evento del contrato).
+        EventBus.emit('player:join', {
+          id: bot.id, nombre: bot.nombre, color: bot.color, x: bot.x, z: bot.z
+        });
+      }
+    },
+
+    actualizar: function (dt) {
+      if (!this.activo) return;
+      var ahora = performance.now();
+      for (var i = 0; i < this.bots.length; i++) {
+        var b = this.bots[i];
+
+        // Avanzar hacia su objetivo; al llegar, elegir otro.
+        var dx = b.targetX - b.x, dz = b.targetZ - b.z;
+        var dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist < 0.25) {
+          var np = puntoAleatorioPlataforma();
+          b.targetX = np.x; b.targetZ = np.z;
+        } else {
+          var paso = Math.min(dist, b.velocidad * dt);
+          b.x += (dx / dist) * paso;
+          b.z += (dz / dist) * paso;
+          b.rot = Math.atan2(dx, dz);
+        }
+
+        // Emitir player:move con throttle (como hará el servidor).
+        if (ahora - b.ultimoMove >= 120) {
+          b.ultimoMove = ahora;
+          EventBus.emit('player:move', { id: b.id, x: b.x, z: b.z, rot: b.rot });
+        }
+
+        // Cada N segundos, seleccionar un planeta al azar.
+        b.tSeleccion -= dt;
+        if (b.tSeleccion <= 0) {
+          b.tSeleccion = 5 + Math.random() * 5;
+          var pl = DATOS_PLANETAS[Math.floor(Math.random() * DATOS_PLANETAS.length)];
+          EventBus.emit('planet:select', {
+            planetId: pl.id, porId: b.id, porNombre: b.nombre
+          });
+        }
+      }
+    },
+
+    // Para Fase 2: apagar la simulación sin tocar nada más.
+    detener: function () { this.activo = false; }
+  };
+
+  // Punto aleatorio dentro de la plataforma (deja margen al borde).
+  function puntoAleatorioPlataforma() {
+    var ang = Math.random() * Math.PI * 2;
+    var r = Math.random() * (LIMITE_AVATAR - 0.5);
+    return { x: Math.cos(ang) * r, z: Math.sin(ang) * r };
+  }
+
+  /* ================================================================
+     PASO 11 — MAPA TÉCNICO (función estrella)
+     highlightConcept(eventKey) resalta ~1.5 s la(s) fila(s) cuyo
+     data-event coincide cuando ese evento ocurre en el bus.
+     ================================================================ */
+  function highlightConcept(eventKey) {
+    var filas = document.querySelectorAll(
+      '#filas-mapa .fila[data-event="' + eventKey + '"]'
+    );
+    for (var i = 0; i < filas.length; i++) {
+      (function (f) {
+        f.classList.add('activa');
+        clearTimeout(f._timer);
+        f._timer = setTimeout(function () { f.classList.remove('activa'); }, 1500);
+      })(filas[i]);
+    }
+  }
+
+  function inicializarMapaConcepto() {
+    // Cada evento canónico ilumina su fila en vivo.
+    var claves = ['player:join', 'player:move', 'planet:select', 'roster:change'];
+    claves.forEach(function (k) {
+      EventBus.on(k, function () { highlightConcept(k); });
+    });
+    // El badge de modo refleja la bandera MODO_RED.
+    document.getElementById('badge-modo-texto').textContent =
+      MODO_RED ? 'Modo Red' : 'Modo Local';
+  }
+
+  /* ================================================================
+     FASE 2 — NETWORKMANAGER (capa de red)
+     ----------------------------------------------------------------
+     Con ?ws= en la URL: abre el WebSocket y TRADUCE cada mensaje del
+     servidor a los mismos eventos del bus que en Fase 1 emitían los
+     bots. Por eso el HUD, el feed y el Mapa técnico no cambian: solo
+     cambia la FUENTE de los eventos.
+
+     Traducción (tabla §4 del plan):
+       welcome         → player:join (por cada remoto) + roster:change
+                         + (si hay) planet:select
+       player_joined   → player:join (+ roster:change vía manager remoto)
+       player_moved    → player:move  (escribe targetX/targetZ, no la pos)
+       player_left     → player:leave (+ roster:change vía manager remoto)
+       planet_selected → planet:select
+
+     Los métodos enviarJoin/enviarMove/enviarSelect son NO-OP en modo
+     local (sin ?ws=): la Fase 1 sigue idéntica.
+     ================================================================ */
+  var NetworkManager = {
+    url: null,
+    socket: null,
+    tuId: null,              // id que el SERVIDOR asigna a este cliente
+    datosJoin: null,         // { nombre, color } para (re)enviar el join
+    _reintento: null,        // timer de reconexión
+    _ultimoMoveRed: 0,       // throttle de envío de move
+    INTERVALO_MOVE_RED: 60,  // ms ≈ 16 Hz
+
+    _huboConexion: false,    // ¿llegó a abrir alguna vez? (para mensajes)
+
+    iniciar: function () {
+      var url = new URLSearchParams(window.location.search).get('ws');
+      if (!url) {
+        console.log('[red] Sin ?ws=: modo local (sin servidor, no hay multiusuario).');
+        return;
+      }
+
+      // --- Guarda anti "mixed content" ---
+      // Una página servida por HTTPS NO puede abrir un WebSocket ws://
+      // (el navegador lo bloquea sin avisar). Render sirve sobre TLS, así
+      // que elevamos ws:// → wss:// automáticamente. En localhost no se
+      // eleva (no hay certificado): ahí el bloqueo solo se evita usando
+      // http:// para el cliente.
+      if (window.location.protocol === 'https:' && /^ws:\/\//i.test(url)) {
+        if (/\/\/(localhost|127\.0\.0\.1)/i.test(url)) {
+          console.error('[red] Página HTTPS + ws://localhost: el navegador lo bloqueará. ' +
+                        'Para multiusuario real, despliega el servidor (Render) y usa wss://.');
+        } else {
+          url = url.replace(/^ws:\/\//i, 'wss://');
+          console.warn('[red] Página HTTPS: ws:// elevado a wss:// → ' + url);
+        }
+      }
+
+      this.url = url;
+      console.log('[red] Página=' + window.location.protocol +
+                  '  WebSocket=' + this.url);
+      // Avisos de sistema al feed, SIN tocar el HUD: se enrutan por el bus
+      // y los pinta el mismo feed reactivo de la Fase 1.
+      EventBus.on('feed:aviso', function (d) { agregarFeed(d.texto); });
+      this.conectar();
+    },
+
+    conectar: function () {
+      var self = this;
+      console.log('[red] Conectando a ' + this.url + ' …');
+      document.getElementById('badge-modo-texto').textContent = 'Conectando…';
+      try {
+        this.socket = new WebSocket(this.url);
+      } catch (e) {
+        console.error('[red] URL de WebSocket inválida: ' + e.message);
+        EventBus.emit('feed:aviso', { texto: 'URL de servidor inválida: ' + self.url });
+        return;
+      }
+
+      // --- Conexión abierta ---
+      this.socket.onopen = function () {
+        self._huboConexion = true;
+        document.getElementById('badge-modo-texto').textContent = 'EN VIVO';
+        console.log('[red] Conectado a ' + self.url);
+        // Si el jugador ya entró, (re)enviar su join.
+        if (self.datosJoin) {
+          self.enviarCrudo({
+            tipo: 'join',
+            nombre: self.datosJoin.nombre,
+            color: self.datosJoin.color
+          });
+        }
+      };
+
+      // --- Mensaje entrante → traducir a eventos del bus ---
+      this.socket.onmessage = function (ev) {
+        var m;
+        try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (!m || typeof m.tipo !== 'string') return;
+        self.traducir(m);
+      };
+
+      // --- Cierre → limpiar remotos y reintentar ---
+      this.socket.onclose = function () {
+        self.socket = null;
+        self.limpiarRemotos();
+        if (self._huboConexion) {
+          // Se había conectado y se cayó (p. ej. Render durmió).
+          document.getElementById('badge-modo-texto').textContent = 'Reconectando…';
+          EventBus.emit('feed:aviso', { texto: 'Conexión perdida. Reconectando…' });
+        } else {
+          // Nunca llegó a abrir: servidor caído, URL errónea o bloqueo.
+          document.getElementById('badge-modo-texto').textContent = 'Sin conexión';
+          EventBus.emit('feed:aviso', {
+            texto: 'No se pudo conectar al servidor. Revisa que esté desplegado y que uses wss://'
+          });
+          console.error('[red] No se pudo conectar a ' + self.url +
+                        '. ¿Servidor desplegado? ¿wss:// y no ws://?');
+        }
+        if (self._reintento) clearTimeout(self._reintento);
+        self._reintento = setTimeout(function () { self.conectar(); }, 2000);
+      };
+
+      // onerror: log; el reintento lo gestiona onclose.
+      this.socket.onerror = function () {
+        console.warn('[red] Error de WebSocket hacia ' + self.url);
+      };
+    },
+
+    // ---- Traducción mensaje del servidor → bus (mantiene el HUD intacto) ----
+    traducir: function (m) {
+      switch (m.tipo) {
+
+        case 'welcome': {
+          this.tuId = m.tuId;
+          var players = m.players || [];
+          for (var i = 0; i < players.length; i++) {
+            var p = players[i];
+            if (p.id === this.tuId) continue;     // nunca duplicar al local
+            EventBus.emit('player:join', {
+              id: p.id, nombre: p.nombre, color: p.color, x: p.x, z: p.z
+            });
+            // Fijar también su rotación/objetivo inicial.
+            EventBus.emit('player:move', {
+              id: p.id, x: p.x, z: p.z, rot: p.rot
+            });
+          }
+          EventBus.emit('roster:change', { players: construirRoster() });
+          if (m.selectedPlanet) {
+            EventBus.emit('planet:select', {
+              planetId: m.selectedPlanet, porId: '', porNombre: 'La sala'
+            });
+          }
+          break;
+        }
+
+        case 'player_joined':
+          if (m.id === this.tuId) return;         // eco del propio local
+          EventBus.emit('player:join', {
+            id: m.id, nombre: m.nombre, color: m.color, x: m.x, z: m.z
+          });
+          break;
+
+        case 'player_moved':
+          if (m.id === this.tuId) return;         // el local se pinta por input
+          // Escribe targetX/targetZ (interpolación de Fase 1), no la posición.
+          EventBus.emit('player:move', {
+            id: m.id, x: m.x, z: m.z, rot: m.rot
+          });
+          break;
+
+        case 'player_left':
+          EventBus.emit('player:leave', { id: m.id });
+          break;
+
+        case 'planet_selected':
+          // El local ya mostró su propia selección al instante: ignorar su eco.
+          if (m.porId === this.tuId) return;
+          EventBus.emit('planet:select', {
+            planetId: m.planetId, porId: m.porId, porNombre: m.porNombre
+          });
+          break;
+      }
+    },
+
+    // Quita los avatares remotos reutilizando el manejador player:leave.
+    limpiarRemotos: function () {
+      var ids = Object.keys(GameState.remotePlayers);
+      for (var i = 0; i < ids.length; i++) {
+        EventBus.emit('player:leave', { id: ids[i] });
+      }
+    },
+
+    // ---- Envío crudo (solo si el socket está abierto) ----
+    enviarCrudo: function (obj) {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify(obj));
+      }
+    },
+
+    // ---- Ganchos de envío (NO-OP en modo local) ----
+    enviarJoin: function (nombre, color) {
+      if (!MODO_RED) return;
+      this.datosJoin = { nombre: nombre, color: color };
+      this.enviarCrudo({ tipo: 'join', nombre: nombre, color: color });
+    },
+    enviarMove: function (x, z, rot) {
+      if (!MODO_RED) return;
+      var ahora = performance.now();
+      if (ahora - this._ultimoMoveRed < this.INTERVALO_MOVE_RED) return;
+      this._ultimoMoveRed = ahora;
+      this.enviarCrudo({ tipo: 'move', x: x, z: z, rot: rot });
+    },
+    enviarSelect: function (planetId) {
+      if (!MODO_RED) return;
+      this.enviarCrudo({ tipo: 'select', planetId: planetId });
+    }
+  };
+
+  /* ----------------------------------------------------------------
+     PASO 1 — CABLEADO MÍNIMO DE LA UI DE ENTRADA
+     Lógica justa para que el overlay se sienta vivo: elegir color,
+     habilitar "Entrar". El spawn real del avatar llega en el Paso 6.
+     ---------------------------------------------------------------- */
+  var nombreElegido = '';
+  var colorElegido = '';
+
+  function inicializarOverlay() {
+    var inputNombre = document.getElementById('input-nombre');
+    var botonEntrar = document.getElementById('boton-entrar');
+    var swatches = document.querySelectorAll('.swatch');
+
+    // Revalida el botón "Entrar": requiere nombre y color.
+    function revalidar() {
+      nombreElegido = inputNombre.value.trim();
+      botonEntrar.disabled = !(nombreElegido.length > 0 && colorElegido !== '');
+    }
+
+    inputNombre.addEventListener('input', revalidar);
+
+    swatches.forEach(function (sw) {
+      sw.addEventListener('click', function () {
+        swatches.forEach(function (s) { s.classList.remove('activo'); });
+        sw.classList.add('activo');
+        colorElegido = sw.getAttribute('data-color');
+        revalidar();
+      });
+    });
+
+    // "Entrar": cierra el overlay y hace spawn del avatar local (Paso 6).
+    // En el Paso 8 esto además emitirá player:join por el EventBus.
+    botonEntrar.addEventListener('click', function () {
+      if (botonEntrar.disabled) return;
+      document.getElementById('overlay-entrada').classList.add('oculto');
+      spawnAvatarLocal(nombreElegido, colorElegido);
+    });
+  }
+
+  /* ----------------------------------------------------------------
+     PASO 1 — CABLEADO DEL MAPA TÉCNICO (toggle mostrar/ocultar)
+     ---------------------------------------------------------------- */
+  function inicializarMapaTecnico() {
+    var boton = document.getElementById('boton-mapa');
+    var panel = document.getElementById('mapa-tecnico');
+    var cerrar = document.getElementById('cerrar-mapa');
+
+    boton.addEventListener('click', function () {
+      panel.classList.toggle('oculto');
+    });
+    cerrar.addEventListener('click', function () {
+      panel.classList.add('oculto');
+    });
+  }
+
+  /* ================================================================
+     FASE 2 (§5b) — PANEL "INVITAR" (QR del link actual)
+     Panel nuevo y aislado: genera en cliente un QR de location.href
+     con qrcodejs y muestra el enlace en texto. No toca el render ni
+     los paneles existentes.
+     ================================================================ */
+  function inicializarInvitar() {
+    var boton = document.getElementById('boton-invitar');
+    var modal = document.getElementById('modal-invitar');
+    var cerrar = document.getElementById('cerrar-invitar');
+    var contenedor = document.getElementById('qr-contenedor');
+    var inputLink = document.getElementById('link-invitar');
+    var botonCopiar = document.getElementById('copiar-link');
+
+    // Genera (o regenera) el QR con la URL actual y refresca el texto.
+    function generarQR() {
+      var url = window.location.href;
+      inputLink.value = url;
+      contenedor.innerHTML = ''; // limpiar QR anterior (la URL pudo cambiar)
+
+      if (typeof QRCode === 'undefined') {
+        // Sin conexión al CDN: al menos queda el enlace en texto.
+        var aviso = document.createElement('span');
+        aviso.className = 'qr-error';
+        aviso.textContent = 'No se pudo cargar el generador de QR. Usa el enlace de abajo.';
+        contenedor.appendChild(aviso);
+        return;
+      }
+      // qrcodejs dibuja módulos oscuros sobre fondo claro (escaneable).
+      new QRCode(contenedor, {
+        text: url,
+        width: 212,
+        height: 212,
+        colorDark: '#0a0e1a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    function abrir() {
+      generarQR();                       // siempre con la URL del momento
+      modal.classList.remove('oculto');
+    }
+    function ocultar() { modal.classList.add('oculto'); }
+
+    boton.addEventListener('click', abrir);
+    cerrar.addEventListener('click', ocultar);
+    // Cerrar al tocar el fondo (fuera de la tarjeta).
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) ocultar();
+    });
+    // Cerrar con Escape.
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') ocultar();
+    });
+
+    // Copiar el enlace al portapapeles (con respaldo para navegadores viejos).
+    botonCopiar.addEventListener('click', function () {
+      var texto = inputLink.value;
+      function feedbackOK() {
+        var original = botonCopiar.textContent;
+        botonCopiar.textContent = '¡Copiado!';
+        setTimeout(function () { botonCopiar.textContent = original; }, 1400);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(texto).then(feedbackOK, seleccionarManual);
+      } else {
+        seleccionarManual();
+      }
+      function seleccionarManual() {
+        inputLink.focus();
+        inputLink.select();
+        try { document.execCommand('copy'); feedbackOK(); } catch (e) {}
+      }
+    });
+  }
+
+  /* ----------------------------------------------------------------
+     ARRANQUE
+     ---------------------------------------------------------------- */
+  window.addEventListener('DOMContentLoaded', function () {
+    inicializarTresD();              // motor 3D + mundo (Pasos 2–4)
+    inicializarHUDReactivo();        // suscribir paneles al bus (Paso 9)
+    inicializarAvataresRemotos();    // materializar remotos desde el bus (Paso 10)
+    inicializarMapaConcepto();       // highlightConcept + badge de modo (Paso 11)
+    inicializarSeleccionPlanetas();  // Raycaster clic/tap (Paso 9)
+    inicializarOverlay();            // overlay de entrada (Paso 1/6)
+    inicializarMapaTecnico();        // toggle del mapa técnico (Paso 1)
+    inicializarInvitar();            // panel Invitar con QR (Fase 2 §5b)
+    NetworkManager.iniciar();        // esqueleto de red, inactivo sin ?ws= (Paso 12)
+  });
+
+  </script>
+</body>
+</html>

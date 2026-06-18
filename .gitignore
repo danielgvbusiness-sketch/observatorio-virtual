@@ -1,0 +1,10 @@
+# Dependencias (Render las instala con "npm install")
+node_modules/
+server/node_modules/
+
+# Config local de Claude Code
+.claude/
+
+# Logs y temporales
+*.log
+npm-debug.log*
